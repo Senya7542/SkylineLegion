@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.playwright-cli/
+vite.stdout.log
+vite.stderr.log
+output/
+.npm-cache/
