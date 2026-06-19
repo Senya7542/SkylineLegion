@@ -31,3 +31,10 @@ When implementing from a selected generated mock, treat that image as the source
 - Use an independent unlit overlay for unmistakable full-target white hit flashes and gold upgrade flashes.
 - Normal bullets, heavy cannon rounds, muzzle flashes, impact sparks and rings share one white-core/gold-glow visual language.
 - Firing and impact sounds must be driven by real combat events and rate-limited when many projectiles land together.
+- Gameplay state, collision bodies and animation state must stay independent from render models so procedural visuals can later be replaced by GLB/FBX-derived adapters.
+- Player clustering uses immediate center spawning, multi-pass circle collision constraints, aircraft exclusion and bounded X/Z motion; avoid delayed batches or fixed formation slots.
+- Unit hit/upgrade/death colors transition smoothly. Death progresses from white hit flash to persistent grey before disappearance.
+- Enemy-player contact kills only the actual colliding pair and applies directional 3D impulse, gravity and spin to both.
+- Projectiles are born with a region/phase lock and may not interact with future gates or waves. Use a non-interactive travel phase between regions.
+- Boss damage must come from visible moving attacks: aimed dodgeable projectiles and a proximity shockwave. The Boss advances and heavy cannon hits may push it back slightly.
+- Preserve the generated Azure Utopia panorama, environment reflections and performance-budgeted dynamic shadows unless a later visual direction replaces them.

@@ -1,136 +1,236 @@
 import { clamp, MAX_VISIBLE_TROOPS } from "./gameConfig.js";
 
-export function formationSlot(index, count) {
-  const visibleCount = Math.min(count, MAX_VISIBLE_TROOPS);
-  const normalized = (index + 0.5) / Math.max(1, visibleCount);
-  const angle = index * 2.399963229728653;
-  const radius = Math.sqrt(normalized) * Math.min(1.46, 0.48 + visibleCount * 0.014);
+const PLAYER_CENTER_Z = 3.05;
+const PLAYER_RADIUS = 0.18;
+const AIRCRAFT_X_RADIUS = 0.56;
+const AIRCRAFT_Z_MIN = 3.18;
+const AIRCRAFT_Z_MAX = 4.28;
 
-  return {
-    x: Math.cos(angle) * radius,
-    z: 3.0 + Math.sin(angle) * radius * 0.62,
-  };
-}
+const easeOutBack = (value) => {
+  const t = clamp(value, 0, 1) - 1;
+  return 1 + 2.70158 * t * t * t + 1.70158 * t * t;
+};
 
 export function createArmyUnit(index) {
   return {
     index,
     active: false,
     x: 0,
-    z: 3.1,
+    y: 0,
+    z: PLAYER_CENTER_Z,
     vx: 0,
+    vy: 0,
     vz: 0,
     scale: 0,
     spawnAt: -10,
-    glowUntil: -10,
-    hitUntil: -10,
+    glowAt: -10,
+    hitAt: -10,
     deathAt: -10,
     dying: false,
-    deathVx: 0,
-    deathVz: 0,
+    rotation: 0,
+    spin: 0,
   };
+}
+
+function pushOutOfAircraft(unit) {
+  if (unit.z < AIRCRAFT_Z_MIN || unit.z > AIRCRAFT_Z_MAX) return;
+  const normalizedZ =
+    (unit.z - AIRCRAFT_Z_MIN) / (AIRCRAFT_Z_MAX - AIRCRAFT_Z_MIN);
+  const halfWidth = AIRCRAFT_X_RADIUS * (0.72 + Math.sin(normalizedZ * Math.PI) * 0.45);
+  if (Math.abs(unit.x) >= halfWidth) return;
+  const side = unit.x === 0 ? (unit.index % 2 ? -1 : 1) : Math.sign(unit.x);
+  const correction = halfWidth - Math.abs(unit.x) + 0.035;
+  unit.x += side * correction;
+  unit.vx += side * correction * 12;
+}
+
+function solvePairCollisions(units, time) {
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    for (let index = 0; index < units.length; index += 1) {
+      const unit = units[index];
+      if (!unit.active || unit.dying || time < unit.spawnAt) continue;
+      const radius = PLAYER_RADIUS * clamp(unit.scale, 0.28, 1);
+
+      for (let otherIndex = 0; otherIndex < index; otherIndex += 1) {
+        const other = units[otherIndex];
+        if (!other.active || other.dying || time < other.spawnAt) continue;
+        const otherRadius = PLAYER_RADIUS * clamp(other.scale, 0.28, 1);
+        let dx = unit.x - other.x;
+        let dz = unit.z - other.z;
+        let distanceSq = dx * dx + dz * dz;
+        const minimum = radius + otherRadius;
+        if (distanceSq >= minimum * minimum) continue;
+
+        if (distanceSq < 0.00001) {
+          const angle = (unit.index * 2.399 + iteration * 0.71) % (Math.PI * 2);
+          dx = Math.cos(angle) * 0.01;
+          dz = Math.sin(angle) * 0.01;
+          distanceSq = dx * dx + dz * dz;
+        }
+
+        const distance = Math.sqrt(distanceSq);
+        const overlap = minimum - distance;
+        const nx = dx / distance;
+        const nz = dz / distance;
+        const correction = overlap * 0.51;
+        unit.x += nx * correction;
+        unit.z += nz * correction;
+        other.x -= nx * correction;
+        other.z -= nz * correction;
+
+        const relativeVelocity = (unit.vx - other.vx) * nx + (unit.vz - other.vz) * nz;
+        if (relativeVelocity < 0) {
+          const impulse = -relativeVelocity * 0.62;
+          unit.vx += nx * impulse;
+          unit.vz += nz * impulse;
+          other.vx -= nx * impulse;
+          other.vz -= nz * impulse;
+        }
+      }
+
+      pushOutOfAircraft(unit);
+      unit.x = clamp(unit.x, -1.54, 1.54);
+      unit.z = clamp(unit.z, 1.48, 4.15);
+    }
+  }
+  units.forEach((unit) => {
+    if (!unit.active || unit.dying) return;
+    pushOutOfAircraft(unit);
+    unit.x = clamp(unit.x, -1.54, 1.54);
+    unit.z = clamp(unit.z, 1.48, 4.15);
+  });
 }
 
 export function updateArmyUnits(units, count, time, delta) {
   const visibleCount = Math.min(count, MAX_VISIBLE_TROOPS);
-  const stiffness = 18;
-  const damping = Math.exp(-7.2 * delta);
+  const livingUnits = units.filter((unit) => unit.active && !unit.dying);
+  const missing = Math.max(0, visibleCount - livingUnits.length);
+  if (missing > 0) {
+    units
+      .filter((unit) => !unit.active)
+      .slice(0, missing)
+      .forEach((unit) => {
+        const angle = unit.index * 2.3999632297;
+        unit.active = true;
+        unit.dying = false;
+        unit.x = Math.cos(angle) * 0.025;
+        unit.y = 0;
+        unit.z = PLAYER_CENTER_Z + Math.sin(angle) * 0.025;
+        unit.vx = Math.cos(angle) * 0.42;
+        unit.vy = 0;
+        unit.vz = Math.sin(angle) * 0.32;
+        unit.scale = 0.05;
+        unit.spawnAt = time;
+        unit.glowAt = time;
+        unit.hitAt = -10;
+        unit.rotation = 0;
+        unit.spin = 0;
+      });
+  }
+  const activeUnits = units.filter((unit) => unit.active && !unit.dying);
 
-  units.forEach((unit, index) => {
+  units.forEach((unit) => {
     if (unit.dying) {
       const age = time - unit.deathAt;
-      if (age > 0.72) {
+      if (age > 0.9) {
         unit.dying = false;
         unit.active = false;
         unit.scale = 0;
         return;
       }
-      unit.x = clamp(unit.x + unit.deathVx * delta, -1.52, 1.52);
-      unit.z = clamp(unit.z + unit.deathVz * delta, 1.55, 4.02);
-      unit.scale = Math.max(0.04, 1 - age / 0.72);
+      unit.vy -= 5.8 * delta;
+      unit.x += unit.vx * delta;
+      unit.y += unit.vy * delta;
+      unit.z += unit.vz * delta;
+      unit.rotation += unit.spin * delta;
+      unit.scale = Math.max(0.04, 1 - age / 0.9);
       return;
     }
 
-    const shouldBeActive = index < visibleCount;
-    if (shouldBeActive && !unit.active) {
-      unit.active = true;
-      unit.dying = false;
-      unit.x = 0;
-      unit.z = 3.0;
-      unit.vx = 0;
-      unit.vz = 0;
-      unit.scale = 0.02;
-      unit.spawnAt = time + Math.floor(index / 5) * 0.018;
-      unit.glowUntil = unit.spawnAt + 0.72;
-    } else if (!shouldBeActive) {
-      unit.active = false;
-      unit.scale = 0;
-      return;
-    }
+    if (!unit.active) return;
 
-    if (time < unit.spawnAt) {
-      unit.scale = 0.02;
-      return;
-    }
+    const spawnAge = time - unit.spawnAt;
+    unit.scale = clamp(easeOutBack(spawnAge / 0.34), 0.05, 1.18);
 
-    const target = formationSlot(index, visibleCount);
-    unit.vx += (target.x - unit.x) * stiffness * delta;
-    unit.vz += (target.z - unit.z) * stiffness * delta;
-
-    // The center-spawned crowd separates into a bounded, springy cluster.
-    for (let otherIndex = 0; otherIndex < index; otherIndex += 1) {
-      const other = units[otherIndex];
-      if (!other.active || other.dying || time < other.spawnAt) continue;
-      const dx = unit.x - other.x;
-      const dz = unit.z - other.z;
-      const distanceSq = dx * dx + dz * dz;
-      if (distanceSq < 0.118) {
-        const distance = Math.max(0.025, Math.sqrt(distanceSq));
-        const nx = distanceSq < 0.0006 ? Math.cos(index * 2.17) : dx / distance;
-        const nz = distanceSq < 0.0006 ? Math.sin(index * 2.17) : dz / distance;
-        const force = (0.345 - distance) * 12 * delta;
-        unit.vx += nx * force;
-        unit.vz += nz * force;
-        other.vx -= nx * force * 0.72;
-        other.vz -= nz * force * 0.72;
-      }
-    }
-
-    unit.vx *= damping;
-    unit.vz *= damping;
-    unit.x = clamp(unit.x + unit.vx * delta, -1.5, 1.5);
-    unit.z = clamp(unit.z + unit.vz * delta, 1.58, 3.98);
-
-    const age = time - unit.spawnAt;
-    const overshoot =
-      age < 0.2
-        ? 1.22 * Math.sin((age / 0.2) * Math.PI * 0.5)
-        : 1 + Math.sin(Math.min(1, (age - 0.2) / 0.28) * Math.PI) * 0.16;
-    unit.scale = clamp(overshoot, 0.02, 1.22);
+    const crowdScale = clamp(Math.sqrt(Math.max(1, visibleCount)) / 9, 0.58, 1.14);
+    const centerX = 0;
+    const centerZ = PLAYER_CENTER_Z - crowdScale * 0.08;
+    const dx = centerX - unit.x;
+    const dz = centerZ - unit.z;
+    unit.vx += dx * 5.2 * delta;
+    unit.vz += dz * 4.5 * delta;
+    unit.vx *= Math.exp(-4.6 * delta);
+    unit.vz *= Math.exp(-4.6 * delta);
+    unit.x += unit.vx * delta;
+    unit.z += unit.vz * delta;
   });
+
+  solvePairCollisions(activeUnits, time);
+  if (activeUnits.length > 0) {
+    const centerX =
+      activeUnits.reduce((sum, unit) => sum + unit.x, 0) / activeUnits.length;
+    activeUnits.forEach((unit) => {
+      unit.vx -= centerX * 0.8;
+      unit.x = clamp(unit.x - centerX * 0.035, -1.54, 1.54);
+    });
+  }
 }
 
-export function killArmyUnits(units, losses, time) {
+export function killArmyUnit(unit, time, impulseX = 0, impulseZ = 0.8) {
+  if (!unit || !unit.active || unit.dying) return false;
+  unit.dying = true;
+  unit.deathAt = time;
+  unit.hitAt = time;
+  unit.vx = impulseX || (unit.x >= 0 ? 1 : -1) * 1.1;
+  unit.vy = 2.4 + Math.min(1.2, Math.abs(impulseZ) * 0.35);
+  unit.vz = impulseZ;
+  unit.spin = (unit.x >= 0 ? -1 : 1) * (6 + Math.abs(impulseX) * 2);
+  return true;
+}
+
+export function killArmyUnits(units, losses, time, originX = 0) {
   const victims = units
     .filter((unit) => unit.active && !unit.dying)
-    .sort((a, b) => b.index - a.index)
+    .sort(
+      (a, b) =>
+        Math.abs(a.x - originX) + a.z * 0.08 -
+        (Math.abs(b.x - originX) + b.z * 0.08),
+    )
     .slice(0, losses);
 
-  victims.forEach((unit, victimIndex) => {
-    unit.dying = true;
-    unit.deathAt = time + victimIndex * 0.018;
-    unit.hitUntil = unit.deathAt + 0.16;
-    unit.deathVx = (unit.x >= 0 ? 1 : -1) * (0.8 + (victimIndex % 3) * 0.2);
-    unit.deathVz = 0.45 + (victimIndex % 4) * 0.09;
+  victims.forEach((unit, index) => {
+    killArmyUnit(
+      unit,
+      time + index * 0.015,
+      (unit.x - originX) * 2.2,
+      0.9 + (index % 3) * 0.18,
+    );
   });
+  return victims;
 }
 
-export function chooseEnemyTarget(waves, waveStates, shooterX, distance) {
+export function findNearestArmyUnit(units, worldX, localZ, playerX) {
+  let nearest = null;
+  let nearestDistanceSq = Infinity;
+  units.forEach((unit) => {
+    if (!unit.active || unit.dying || unit.scale < 0.45) return;
+    const dx = playerX + unit.x - worldX;
+    const dz = unit.z - localZ;
+    const distanceSq = dx * dx + dz * dz;
+    if (distanceSq < nearestDistanceSq) {
+      nearestDistanceSq = distanceSq;
+      nearest = unit;
+    }
+  });
+  return nearestDistanceSq <= 0.34 * 0.34 ? nearest : null;
+}
+
+export function chooseEnemyTarget(waves, waveStates, shooterX, distance, regionIndex) {
   let best = null;
   let bestScore = Infinity;
 
   waves.forEach((enemies, waveIndex) => {
-    if (!waveStates[waveIndex]?.unlocked) return;
+    if (waveIndex !== regionIndex || !waveStates[waveIndex]?.unlocked) return;
     enemies.forEach((enemy) => {
       if (!enemy.alive) return;
       const z =
@@ -138,7 +238,7 @@ export function chooseEnemyTarget(waves, waveStates, shooterX, distance) {
         enemy.waveZ -
         enemy.zOffset +
         (waveStates[waveIndex]?.advance || 0);
-      if (z > 3.2 || z < -48) return;
+      if (z > 4.4 || z < -48) return;
       const x = enemy.currentX ?? enemy.x;
       const score = Math.abs(x - shooterX) * 2.2 + Math.abs(z) * 0.035;
       if (score < bestScore) {

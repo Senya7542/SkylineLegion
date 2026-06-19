@@ -1,4 +1,4 @@
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Float, Sparkles, Text } from "@react-three/drei";
 import {
   ArrowsOutSimple,
@@ -35,9 +35,12 @@ import {
   chooseEnemyTarget,
   createArmyUnit,
   createEnemy,
+  findNearestArmyUnit,
+  killArmyUnit,
   killArmyUnits,
   updateArmyUnits,
 } from "./gameSystems.js";
+import { ENTITY_VISUALS } from "./entityVisuals.js";
 
 const DEBUG_FLAGS =
   !import.meta.env.DEV || typeof window === "undefined"
@@ -51,6 +54,9 @@ const DEBUG_NO_PHYSICS = DEBUG_FLAGS.has("noPhysics");
 const DEBUG_SLOW = DEBUG_FLAGS.has("slow");
 const DEBUG_NO_ADVANCE = DEBUG_FLAGS.has("noAdvance");
 const DEBUG_STOP_AT = Number(DEBUG_FLAGS.get("stopAt")) || null;
+const DEBUG_BOSS_TEST = DEBUG_FLAGS.has("bossTest");
+const DEBUG_ENEMY_RUSH = DEBUG_FLAGS.has("enemyRush");
+const MAX_BOSS_PROJECTILES = 36;
 
 function Hovercraft({ active, rapidRef, playerXRef, cannonPulseRef }) {
   const ref = useRef();
@@ -64,7 +70,7 @@ function Hovercraft({ active, rapidRef, playerXRef, cannonPulseRef }) {
     const t = state.clock.elapsedTime;
     const velocity = (playerXRef.current - previousX.current) / Math.max(delta, 0.001);
     previousX.current = playerXRef.current;
-    ref.current.position.y = 0.48 + Math.sin(t * 5.5) * 0.04;
+    ref.current.position.y = 1.02 + Math.sin(t * 5.5) * 0.04;
     ref.current.rotation.z = THREE.MathUtils.damp(
       ref.current.rotation.z,
       clamp(-velocity * 0.045, -0.16, 0.16),
@@ -86,8 +92,8 @@ function Hovercraft({ active, rapidRef, playerXRef, cannonPulseRef }) {
   });
 
   return (
-    <group ref={ref} position={[0, 0.48, 3.72]}>
-      <mesh rotation={[0, Math.PI / 4, 0]}>
+    <group ref={ref} position={[0, 1.02, 3.72]}>
+      <mesh rotation={[0, Math.PI / 4, 0]} castShadow>
         <octahedronGeometry args={[0.78, 0]} />
         <meshStandardMaterial
           color="#e7fdff"
@@ -95,7 +101,11 @@ function Hovercraft({ active, rapidRef, playerXRef, cannonPulseRef }) {
           roughness={0.22}
         />
       </mesh>
-      <mesh position={[0, 0.26, 0.08]} scale={[0.7, 0.58, 1.05]}>
+      <mesh
+        position={[0, 0.26, 0.08]}
+        scale={[0.7, 0.58, 1.05]}
+        castShadow
+      >
         <sphereGeometry args={[0.48, 12, 8]} />
         <meshStandardMaterial
           color="#078dc8"
@@ -124,7 +134,7 @@ function Hovercraft({ active, rapidRef, playerXRef, cannonPulseRef }) {
           position={[side * 0.83, -0.02, 0.12]}
           rotation={[0, side * -0.18, side * -0.04]}
         >
-          <mesh rotation={[0, 0, side * 0.08]}>
+          <mesh rotation={[0, 0, side * 0.08]} castShadow>
             <boxGeometry args={[0.78, 0.11, 1.16]} />
             <meshStandardMaterial
               color="#dffaff"
@@ -195,14 +205,14 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
       pulse.from = previousCount.current;
       pulse.to = count;
       unitsRef.current.forEach((unit, index) => {
-        if (index < previousCount.current) unit.glowUntil = time + 0.72;
+        if (index < previousCount.current) unit.glowAt = time;
       });
     }
     previousCount.current = count;
     updateArmyUnits(unitsRef.current, count, time, delta);
 
     unitsRef.current.forEach((unit, index) => {
-      if (!unit.active || time < unit.spawnAt) {
+      if (!unit.active) {
         dummy.scale.setScalar(0);
         dummy.updateMatrix();
         bodies.current.setMatrixAt(index, dummy.matrix);
@@ -213,40 +223,60 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
         return;
       }
       const step = Math.abs(Math.sin(time * 8 + index * 0.7)) * 0.045;
-      const scale = unit.scale * 0.92;
-      const glowing = time < unit.glowUntil;
-      const hitFlashing = time < unit.hitUntil;
-      const flashing = glowing || hitFlashing;
-      color.set("#37d4ff");
+      const scale = unit.scale * ENTITY_VISUALS.playerSoldier.scale;
+      const glowAge = time - unit.glowAt;
+      const glowIntensity =
+        glowAge >= 0 && glowAge < 0.62
+          ? Math.sin((glowAge / 0.62) * Math.PI)
+          : 0;
+      const hitAge = time - unit.hitAt;
+      const hitIntensity =
+        hitAge >= 0 && hitAge < 0.2
+          ? Math.sin((hitAge / 0.2) * Math.PI)
+          : 0;
+      const deathAge = unit.dying ? time - unit.deathAt : -1;
+      const greyAmount = unit.dying
+        ? THREE.MathUtils.smoothstep(deathAge, 0.1, 0.32)
+        : 0;
+      const overlayIntensity = Math.max(glowIntensity, hitIntensity);
+      const overlayColor =
+        hitIntensity >= glowIntensity ? "#ffffff" : "#ffd83f";
 
-      dummy.position.set(unit.x, 0.58 + step, unit.z);
-      dummy.rotation.set(0, 0, 0);
+      dummy.position.set(unit.x, 0.58 + step + unit.y, unit.z);
+      dummy.rotation.set(unit.rotation * 0.45, 0, unit.rotation);
       dummy.scale.set(scale, scale, scale);
       dummy.updateMatrix();
       bodies.current.setMatrixAt(index, dummy.matrix);
-      bodies.current.setColorAt(index, color);
-      dummy.scale.multiplyScalar(flashing ? 1.08 : 0);
+      bodies.current.setColorAt(
+        index,
+        color.set("#37d4ff").lerp(new THREE.Color("#747b80"), greyAmount),
+      );
+      dummy.scale.multiplyScalar(1.06);
       dummy.updateMatrix();
       flashBodies.current.setMatrixAt(index, dummy.matrix);
       flashBodies.current.setColorAt(
         index,
-        flashColor.set(hitFlashing ? "#ffffff" : "#fff16a"),
+        flashColor.set(overlayColor).multiplyScalar(overlayIntensity),
       );
 
-      dummy.position.set(unit.x, 0.84 + step, unit.z);
+      dummy.position.set(unit.x, 0.84 + step + unit.y, unit.z);
+      dummy.rotation.set(unit.rotation * 0.45, 0, unit.rotation);
       dummy.scale.setScalar(scale);
       dummy.updateMatrix();
       heads.current.setMatrixAt(index, dummy.matrix);
-      heads.current.setColorAt(index, color.set("#f7ffff"));
-      dummy.scale.multiplyScalar(flashing ? 1.1 : 0);
+      heads.current.setColorAt(
+        index,
+        color.set("#f7ffff").lerp(new THREE.Color("#8c9194"), greyAmount),
+      );
+      dummy.scale.multiplyScalar(1.08);
       dummy.updateMatrix();
       flashHeads.current.setMatrixAt(index, dummy.matrix);
       flashHeads.current.setColorAt(
         index,
-        flashColor.set(hitFlashing ? "#ffffff" : "#fff7a8"),
+        flashColor.set(overlayColor).multiplyScalar(overlayIntensity),
       );
 
-      dummy.position.set(unit.x + 0.08, 0.65 + step, unit.z - 0.08);
+      dummy.position.set(unit.x + 0.08, 0.65 + step + unit.y, unit.z - 0.08);
       dummy.rotation.set(Math.PI / 2, 0, 0);
       dummy.scale.setScalar(scale);
       dummy.updateMatrix();
@@ -271,7 +301,7 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
 
   return (
     <group>
-      <instancedMesh ref={bodies} args={[null, null, MAX_VISIBLE_TROOPS]}>
+      <instancedMesh ref={bodies} args={[null, null, MAX_VISIBLE_TROOPS]} castShadow>
         <capsuleGeometry args={[0.105, 0.25, 3, 7]} />
         <meshStandardMaterial
           color="#37d4ff"
@@ -282,7 +312,7 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
           roughness={0.3}
         />
       </instancedMesh>
-      <instancedMesh ref={heads} args={[null, null, MAX_VISIBLE_TROOPS]}>
+      <instancedMesh ref={heads} args={[null, null, MAX_VISIBLE_TROOPS]} castShadow>
         <sphereGeometry args={[0.14, 8, 8]} />
         <meshStandardMaterial
           color="#eaffff"
@@ -302,8 +332,9 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
           vertexColors
           toneMapped={false}
           transparent
-          opacity={0.95}
+          opacity={1}
           depthWrite={false}
+          blending={THREE.AdditiveBlending}
         />
       </instancedMesh>
       <instancedMesh ref={flashHeads} args={[null, null, MAX_VISIBLE_TROOPS]}>
@@ -313,8 +344,9 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
           vertexColors
           toneMapped={false}
           transparent
-          opacity={0.95}
+          opacity={1}
           depthWrite={false}
+          blending={THREE.AdditiveBlending}
         />
       </instancedMesh>
     </group>
@@ -495,6 +527,88 @@ function ProjectilePool({ bulletsRef }) {
         <meshBasicMaterial color="#ffffff" toneMapped={false} />
       </instancedMesh>
     </group>
+  );
+}
+
+function BossProjectilePool({ projectilesRef }) {
+  const glow = useRef();
+  const core = useRef();
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  useEffect(() => {
+    [glow, core].forEach((ref) => {
+      if (ref.current) ref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    });
+  }, []);
+  useFrame(() => {
+    if (!glow.current || !core.current) return;
+    projectilesRef.current.forEach((projectile, index) => {
+      if (!projectile.active) {
+        dummy.scale.setScalar(0);
+      } else {
+        dummy.position.set(projectile.x, projectile.y, projectile.z);
+        dummy.rotation.set(0, 0, projectile.vx * 0.08);
+        dummy.scale.set(1.4, 1.4, 3.5);
+      }
+      dummy.updateMatrix();
+      glow.current.setMatrixAt(index, dummy.matrix);
+      if (projectile.active) dummy.scale.multiplyScalar(0.48);
+      dummy.updateMatrix();
+      core.current.setMatrixAt(index, dummy.matrix);
+    });
+    glow.current.instanceMatrix.needsUpdate = true;
+    core.current.instanceMatrix.needsUpdate = true;
+  });
+  return (
+    <group>
+      <instancedMesh ref={glow} args={[null, null, MAX_BOSS_PROJECTILES]}>
+        <sphereGeometry args={[0.11, 7, 7]} />
+        <meshBasicMaterial
+          color="#ff3d1f"
+          transparent
+          opacity={0.82}
+          toneMapped={false}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </instancedMesh>
+      <instancedMesh ref={core} args={[null, null, MAX_BOSS_PROJECTILES]}>
+        <sphereGeometry args={[0.11, 7, 7]} />
+        <meshBasicMaterial color="#fff0b0" toneMapped={false} />
+      </instancedMesh>
+    </group>
+  );
+}
+
+function BossShockwave({ shockwaveRef }) {
+  const ring = useRef();
+  useFrame((state) => {
+    if (!ring.current) return;
+    const age = state.clock.elapsedTime - shockwaveRef.current.at;
+    const active = age >= 0 && age < 0.85;
+    ring.current.visible = active;
+    if (!active) return;
+    const progress = age / 0.85;
+    ring.current.position.z = shockwaveRef.current.z;
+    ring.current.scale.setScalar(0.4 + progress * 7);
+    ring.current.material.opacity = (1 - progress) * 0.88;
+  });
+  return (
+    <mesh
+      ref={ring}
+      position={[0, 0.14, -20]}
+      rotation={[Math.PI / 2, 0, 0]}
+      visible={false}
+    >
+      <torusGeometry args={[0.58, 0.065, 8, 48]} />
+      <meshBasicMaterial
+        color="#ff4b2d"
+        transparent
+        opacity={0}
+        toneMapped={false}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </mesh>
   );
 }
 
@@ -778,6 +892,7 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
   const alertRing = useRef();
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const bodyColor = useMemo(() => new THREE.Color(), []);
+  const flashColor = useMemo(() => new THREE.Color(), []);
 
   useEffect(() => {
     [bodies, heads, legs, flashBodies, flashHeads].forEach((ref) => {
@@ -820,13 +935,17 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
       let rotationZ = 0;
       let visible = renderZ > -64 && renderZ < 8;
       let hit = 0;
+      let greyAmount = 0;
 
       if (enemy.alive) {
         const runRate = waveState.alerted ? 10.5 : 5.5;
         y += Math.abs(Math.sin(t * runRate + enemy.id)) * (waveState.alerted ? 0.12 : 0.07);
         rotationY = Math.sin(t * 2 + enemy.id) * 0.14;
         const hitAge = t - enemy.hitAt;
-        hit = hitAge >= 0 && hitAge < 0.22 ? 1 - hitAge / 0.22 : 0;
+        hit =
+          hitAge >= 0 && hitAge < 0.22
+            ? Math.sin((hitAge / 0.22) * Math.PI)
+            : 0;
         scaleX = 1 + hit * 0.24;
         scaleY = 1 - hit * 0.28;
         scaleZ = 1 + hit * 0.24;
@@ -835,7 +954,11 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
         visible = age >= 0 && age <= 0.9;
         if (visible) {
           const flightAge = Math.max(0, age - 0.11);
-          hit = age < 0.16 ? 1 : 0;
+          hit =
+            age >= 0 && age < 0.16
+              ? Math.sin((age / 0.16) * Math.PI)
+              : 0;
+          greyAmount = THREE.MathUtils.smoothstep(age, 0.1, 0.3);
           x += enemy.vx * flightAge;
           y += enemy.vy * flightAge - 4.6 * flightAge * flightAge;
           z += enemy.vz * flightAge;
@@ -863,20 +986,31 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
       dummy.scale.set(scaleX, scaleY, scaleZ);
       dummy.updateMatrix();
       bodies.current.setMatrixAt(index, dummy.matrix);
-      bodyColor.set("#e54f32");
+      bodyColor.set("#e54f32").lerp(new THREE.Color("#696b6c"), greyAmount);
       bodies.current.setColorAt(index, bodyColor);
-      dummy.scale.multiplyScalar(hit > 0 ? 1.08 : 0);
+      dummy.scale.multiplyScalar(1.08);
       dummy.updateMatrix();
       flashBodies.current.setMatrixAt(index, dummy.matrix);
+      flashBodies.current.setColorAt(
+        index,
+        flashColor.set("#ffffff").multiplyScalar(hit),
+      );
 
       dummy.position.set(x, y + 0.3 * scaleY, z);
       dummy.scale.setScalar(0.95 * scaleX);
       dummy.updateMatrix();
       heads.current.setMatrixAt(index, dummy.matrix);
-      heads.current.setColorAt(index, bodyColor.set("#ffbc83"));
-      dummy.scale.multiplyScalar(hit > 0 ? 1.1 : 0);
+      heads.current.setColorAt(
+        index,
+        bodyColor.set("#ffbc83").lerp(new THREE.Color("#858585"), greyAmount),
+      );
+      dummy.scale.multiplyScalar(1.1);
       dummy.updateMatrix();
       flashHeads.current.setMatrixAt(index, dummy.matrix);
+      flashHeads.current.setColorAt(
+        index,
+        flashColor.set("#ffffff").multiplyScalar(hit),
+      );
 
       dummy.position.set(x, y - 0.12 * scaleY, z);
       dummy.scale.set(scaleX, scaleY, scaleZ);
@@ -894,6 +1028,12 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
     }
     if (heads.current.instanceColor) heads.current.instanceColor.needsUpdate = true;
     if (legs.current.instanceColor) legs.current.instanceColor.needsUpdate = true;
+    if (flashBodies.current.instanceColor) {
+      flashBodies.current.instanceColor.needsUpdate = true;
+    }
+    if (flashHeads.current.instanceColor) {
+      flashHeads.current.instanceColor.needsUpdate = true;
+    }
   });
 
   return (
@@ -913,7 +1053,7 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
           depthWrite={false}
         />
       </mesh>
-      <instancedMesh ref={bodies} args={[null, null, enemies.length]}>
+      <instancedMesh ref={bodies} args={[null, null, enemies.length]} castShadow>
         <dodecahedronGeometry args={[0.23, 0]} />
         <meshStandardMaterial
           color="#e54f32"
@@ -924,7 +1064,7 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
           roughness={0.32}
         />
       </instancedMesh>
-      <instancedMesh ref={heads} args={[null, null, enemies.length]}>
+      <instancedMesh ref={heads} args={[null, null, enemies.length]} castShadow>
         <sphereGeometry args={[0.14, 8, 8]} />
         <meshStandardMaterial
           color="#ffbc83"
@@ -941,34 +1081,45 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
         <dodecahedronGeometry args={[0.23, 0]} />
         <meshBasicMaterial
           color="#ffffff"
+          vertexColors
           toneMapped={false}
           transparent
-          opacity={0.98}
+          opacity={1}
           depthWrite={false}
+          blending={THREE.AdditiveBlending}
         />
       </instancedMesh>
       <instancedMesh ref={flashHeads} args={[null, null, enemies.length]}>
         <sphereGeometry args={[0.14, 8, 8]} />
         <meshBasicMaterial
           color="#ffffff"
+          vertexColors
           toneMapped={false}
           transparent
-          opacity={0.98}
+          opacity={1}
           depthWrite={false}
+          blending={THREE.AdditiveBlending}
         />
       </instancedMesh>
     </group>
   );
 }
 
-function Boss({ distanceRef, healthRef, activeRef, hitRef }) {
+function Boss({
+  distanceRef,
+  healthRef,
+  activeRef,
+  hitRef,
+  advanceRef,
+  attackRef,
+}) {
   const ref = useRef();
   const coreMaterial = useRef();
   const hitMaterials = useRef([]);
 
   useFrame((state) => {
     if (!ref.current) return;
-    const z = distanceRef.current - BOSS_Z;
+    const z = distanceRef.current - BOSS_Z + advanceRef.current;
     ref.current.position.z = z;
     ref.current.visible =
       distanceRef.current >= TRACK_END - 12 && z > -40 && z < 8;
@@ -976,9 +1127,19 @@ function Boss({ distanceRef, healthRef, activeRef, hitRef }) {
     const hitAge = state.clock.elapsedTime - hitRef.current;
     const hit = hitAge >= 0 && hitAge < 0.11 ? 1 - hitAge / 0.11 : 0;
     ref.current.scale.set(1 + hit * 0.08, 1 - hit * 0.12, 1 + hit * 0.08);
+    const attackAge = state.clock.elapsedTime - attackRef.current;
+    const attacking =
+      attackAge >= 0 && attackAge < 0.42
+        ? Math.sin((attackAge / 0.42) * Math.PI)
+        : 0;
+    ref.current.rotation.x = -attacking * 0.08;
     hitMaterials.current.forEach((material) => {
       if (!material) return;
       material.color.set(hit > 0 ? "#ffffff" : material.userData.baseColor);
+      if (material.emissive) {
+        material.emissiveIntensity =
+          (material.userData.baseEmissive ?? 0) + attacking * 3;
+      }
     });
     if (coreMaterial.current) {
       coreMaterial.current.color.set(hit > 0 ? "#ffffff" : "#ecffff");
@@ -1025,6 +1186,7 @@ function Boss({ distanceRef, healthRef, activeRef, hitRef }) {
           ref={(material) => {
             if (material) {
               material.userData.baseColor = "#75efff";
+              material.userData.baseEmissive = 1.2;
               hitMaterials.current[2] = material;
             }
           }}
@@ -1054,6 +1216,7 @@ function Boss({ distanceRef, healthRef, activeRef, hitRef }) {
                 ref={(material) => {
                   if (material) {
                     material.userData.baseColor = "#ffad3d";
+                    material.userData.baseEmissive = 1;
                     hitMaterials.current[3 + sideIndex * 2] = material;
                   }
                 }}
@@ -1069,6 +1232,7 @@ function Boss({ distanceRef, healthRef, activeRef, hitRef }) {
                 ref={(material) => {
                   if (material) {
                     material.userData.baseColor = "#d9f8ff";
+                    material.userData.baseEmissive = 0.5;
                     hitMaterials.current[4 + sideIndex * 2] = material;
                   }
                 }}
@@ -1141,7 +1305,7 @@ function Road({ distanceRef }) {
     <group ref={ref}>
       {Array.from({ length: 14 }, (_, index) => (
         <group key={index} position={[0, 0, -index * 8]}>
-          <mesh position={[0, -0.18, 0]}>
+          <mesh position={[0, -0.18, 0]} receiveShadow>
             <boxGeometry args={[7.1, 0.42, 7.78]} />
             <meshStandardMaterial
               color="#b9e2e5"
@@ -1149,7 +1313,7 @@ function Road({ distanceRef }) {
               roughness={0.5}
             />
           </mesh>
-          <mesh position={[0, 0.045, 0]}>
+          <mesh position={[0, 0.045, 0]} receiveShadow>
             <boxGeometry args={[6.0, 0.04, 7.62]} />
             <meshStandardMaterial color="#ccecee" roughness={0.58} />
           </mesh>
@@ -1169,13 +1333,34 @@ function Road({ distanceRef }) {
   );
 }
 
+function SkyEnvironment() {
+  const { scene } = useThree();
+  const texture = useLoader(
+    THREE.TextureLoader,
+    "/assets/azure-sky-panorama-v1.jpg",
+  );
+  useEffect(() => {
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    scene.background = texture;
+    scene.environment = texture;
+    scene.backgroundIntensity = 0.78;
+    scene.environmentIntensity = 0.58;
+    return () => {
+      if (scene.background === texture) scene.background = null;
+      if (scene.environment === texture) scene.environment = null;
+    };
+  }, [scene, texture]);
+  return null;
+}
+
 function World({ status, runSeed, onFrameData, onEvent }) {
   const { camera, gl } = useThree();
   const gates = useMemo(() => createGates(runSeed), [runSeed]);
   const playerX = useRef(0);
   const pointerTargetX = useRef(0);
-  const distance = useRef(0);
-  const troops = useRef(12);
+  const distance = useRef(DEBUG_BOSS_TEST ? TRACK_END : 0);
+  const troops = useRef(DEBUG_BOSS_TEST ? 80 : DEBUG_ENEMY_RUSH ? 40 : 12);
   const combo = useRef(1);
   const bossHealth = useRef(100);
   const rapidUntil = useRef(0);
@@ -1187,14 +1372,14 @@ function World({ status, runSeed, onFrameData, onEvent }) {
       rightValue: gate.right,
       leftHit: 0,
       rightHit: 0,
-      resolved: false,
+      resolved: DEBUG_BOSS_TEST,
       choice: null,
       resolvedAt: 0,
     })),
   );
   const waveStates = useRef(
     WAVES.map(() => ({
-      unlocked: false,
+      unlocked: DEBUG_BOSS_TEST,
       alerted: false,
       alertedAt: -10,
       advance: 0,
@@ -1224,6 +1409,9 @@ function World({ status, runSeed, onFrameData, onEvent }) {
       rapid: false,
       heavy: false,
       shooter: 0,
+      regionIndex: 0,
+      phase: "gate",
+      life: 0,
     })),
   );
   const impacts = useRef(
@@ -1238,11 +1426,27 @@ function World({ status, runSeed, onFrameData, onEvent }) {
       size: 1,
     })),
   );
-  const resolvedWaves = useRef(new Set());
-  const clearedWaves = useRef(new Set());
-  const bossActive = useRef(false);
+  const clearedWaves = useRef(
+    new Set(DEBUG_BOSS_TEST ? WAVES.map((_, index) => index) : []),
+  );
+  const bossActive = useRef(DEBUG_BOSS_TEST);
   const bossHitAt = useRef(-10);
-  const bossAttackTimer = useRef(1.2);
+  const bossAdvance = useRef(0);
+  const bossAttackAt = useRef(-10);
+  const bossVolleyTimer = useRef(1.2);
+  const bossShockwaveTimer = useRef(2.2);
+  const bossShockwave = useRef({ at: -10, z: -20 });
+  const bossProjectiles = useRef(
+    Array.from({ length: MAX_BOSS_PROJECTILES }, () => ({
+      active: false,
+      x: 0,
+      y: 0.8,
+      z: -20,
+      vx: 0,
+      vz: 0,
+      life: 0,
+    })),
+  );
   const shotTimer = useRef(0);
   const heavyShotTimer = useRef(0.55);
   const cannonPulse = useRef(-10);
@@ -1252,8 +1456,25 @@ function World({ status, runSeed, onFrameData, onEvent }) {
   const keyboard = useRef({ left: false, right: false });
   const lastHit = useRef(null);
   const lastEnemyHit = useRef(null);
+  const lastPlayerDeath = useRef(null);
   const movementSamples = useRef([]);
   const fpsCounter = useRef({ frames: 0, elapsed: 0, value: 0 });
+
+  const getCombatStage = () => {
+    const regionIndex = WAVES.findIndex(
+      (_, index) => !clearedWaves.current.has(index),
+    );
+    if (regionIndex < 0) return { regionIndex: WAVES.length, phase: "boss" };
+    const gateDistance = gates[regionIndex].z - distance.current;
+    return {
+      regionIndex,
+      phase: gateStates.current[regionIndex].resolved
+        ? "wave"
+        : gateDistance <= 27
+          ? "gate"
+          : "travel",
+    };
+  };
 
   const spawnImpact = (x, y, z, color, duration = 0.24, size = 1) => {
     const impact =
@@ -1274,6 +1495,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
   };
 
   const spawnVolley = (rapid) => {
+    const stage = getCombatStage();
     const activeShooters = armyUnits.current.filter(
       (unit) => unit.active && !unit.dying && unit.scale > 0.72,
     );
@@ -1293,6 +1515,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
         waveStates.current,
         shooterX,
         distance.current,
+        stage.regionIndex,
       );
       bullet.active = true;
       bullet.x = shooterX;
@@ -1305,6 +1528,9 @@ function World({ status, runSeed, onFrameData, onEvent }) {
       bullet.rapid = rapid;
       bullet.heavy = false;
       bullet.shooter = shooter.index;
+      bullet.regionIndex = stage.regionIndex;
+      bullet.phase = stage.phase;
+      bullet.life = stage.phase === "travel" ? 0.48 : 2.6;
     });
     const muzzle = sorted[Math.floor(sorted.length / 2)];
     if (muzzle) {
@@ -1321,6 +1547,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
   };
 
   const spawnHeavyShot = (time) => {
+    const stage = getCombatStage();
     const bullet = bullets.current.find((item) => !item.active);
     if (!bullet) return;
     const target = chooseEnemyTarget(
@@ -1328,11 +1555,12 @@ function World({ status, runSeed, onFrameData, onEvent }) {
       waveStates.current,
       playerX.current,
       distance.current,
+      stage.regionIndex,
     );
     bullet.active = true;
     bullet.x = playerX.current;
-    bullet.y = 0.83;
-    bullet.z = 3.28;
+    bullet.y = 1.62;
+    bullet.z = 3.34;
     bullet.speed = 17.5;
     bullet.vx = target
       ? clamp((target.x - playerX.current) * 0.75, -1.3, 1.3)
@@ -1340,9 +1568,32 @@ function World({ status, runSeed, onFrameData, onEvent }) {
     bullet.rapid = false;
     bullet.heavy = true;
     bullet.shooter = -1;
+    bullet.regionIndex = stage.regionIndex;
+    bullet.phase = stage.phase;
+    bullet.life = stage.phase === "travel" ? 0.48 : 2.8;
     cannonPulse.current = time;
     spawnImpact(playerX.current, 0.83, 3.08, "#fff16a", 0.2, 1.25);
     onEvent({ type: "shoot", heavy: true });
+  };
+
+  const spawnBossVolley = (time) => {
+    const bossZ = distance.current - BOSS_Z + bossAdvance.current;
+    [-1.65, 1.65].forEach((muzzleX, index) => {
+      const projectile = bossProjectiles.current.find((item) => !item.active);
+      if (!projectile) return;
+      const targetX =
+        playerX.current + (index ? 0.28 : -0.28) + (Math.random() - 0.5) * 0.18;
+      const travelTime = Math.max(0.8, (3.1 - bossZ) / 8.2);
+      projectile.active = true;
+      projectile.x = muzzleX;
+      projectile.y = 1.05;
+      projectile.z = bossZ + 0.1;
+      projectile.vx = (targetX - muzzleX) / travelTime;
+      projectile.vz = 8.2;
+      projectile.life = 2.6;
+    });
+    bossAttackAt.current = time;
+    onEvent({ type: "boss-fire" });
   };
 
   useEffect(() => {
@@ -1425,24 +1676,50 @@ function World({ status, runSeed, onFrameData, onEvent }) {
 
       WAVES.forEach((wave, waveIndex) => {
         const waveState = waveStates.current[waveIndex];
+        if (
+          DEBUG_ENEMY_RUSH &&
+          waveState.unlocked &&
+          !waveState.alerted
+        ) {
+          waveState.alerted = true;
+          waveState.alertedAt = state.clock.elapsedTime;
+        }
         if (waveState.alerted) {
           const frontZ = distance.current - wave.z + waveState.advance;
           const pressure = clamp((-frontZ + 5) / 34, 0.25, 1);
-          waveState.advance += delta * wave.speed * pressure;
+          waveState.advance +=
+            delta * wave.speed * pressure * (DEBUG_ENEMY_RUSH ? 3.5 : 1);
         }
         waveEnemies.current[waveIndex].forEach((enemy) => {
           if (!enemy.alive) return;
-          const tracking = waveState.alerted ? playerX.current * 0.2 : 0;
+          const renderZ =
+            distance.current -
+            wave.z -
+            enemy.zOffset +
+            waveState.advance;
+          let targetX = enemy.x + (waveState.alerted ? playerX.current * 0.2 : 0);
+          if (waveState.alerted && renderZ > -10) {
+            const nearest = armyUnits.current
+              .filter((unit) => unit.active && !unit.dying)
+              .reduce((best, unit) => {
+                const worldX = playerX.current + unit.x;
+                const distanceToEnemy = Math.abs(worldX - enemy.currentX);
+                return !best || distanceToEnemy < best.distance
+                  ? { x: worldX, distance: distanceToEnemy }
+                  : best;
+              }, null);
+            if (nearest) targetX = nearest.x;
+          }
           enemy.currentX = THREE.MathUtils.damp(
             enemy.currentX,
-            enemy.x + tracking,
-            waveState.alerted ? 2.8 : 4.5,
+            targetX,
+            waveState.alerted ? 3.4 : 4.5,
             delta,
           );
         });
       });
 
-      if (!DEBUG_NO_PHYSICS) {
+      if (!DEBUG_NO_PHYSICS && !DEBUG_ENEMY_RUSH) {
         shotTimer.current -= delta;
         heavyShotTimer.current -= delta;
         if (shotTimer.current <= 0) {
@@ -1457,15 +1734,26 @@ function World({ status, runSeed, onFrameData, onEvent }) {
 
       if (!DEBUG_NO_PHYSICS) bullets.current.forEach((bullet) => {
         if (!bullet.active) return;
+        bullet.life -= delta;
+        if (bullet.life <= 0) {
+          bullet.active = false;
+          return;
+        }
         const oldZ = bullet.z;
         const oldX = bullet.x;
         const nextZ = oldZ - bullet.speed * delta;
         const nextX = oldX + bullet.vx * delta;
+        const targetY = bullet.heavy ? 0.82 : bullet.y;
+        bullet.y = THREE.MathUtils.damp(bullet.y, targetY, 4.5, delta);
         const collisionX = (oldX + nextX) * 0.5;
         let target = null;
         let targetZ = -Infinity;
 
         gates.forEach((gate, gateIndex) => {
+          if (
+            bullet.phase !== "gate" ||
+            gateIndex !== bullet.regionIndex
+          ) return;
           const gateState = gateStates.current[gateIndex];
           if (gateState.resolved) return;
           const z = distance.current - gate.z;
@@ -1483,7 +1771,11 @@ function World({ status, runSeed, onFrameData, onEvent }) {
         });
 
         if (!DEBUG_NO_ENEMIES) WAVES.forEach((wave, waveIndex) => {
-          if (!waveStates.current[waveIndex].unlocked) return;
+          if (
+            bullet.phase !== "wave" ||
+            waveIndex !== bullet.regionIndex ||
+            !waveStates.current[waveIndex].unlocked
+          ) return;
           waveEnemies.current[waveIndex].forEach((enemy) => {
             if (!enemy.alive) return;
             const z =
@@ -1503,8 +1795,12 @@ function World({ status, runSeed, onFrameData, onEvent }) {
           });
         });
 
-        if (bossActive.current && bossHealth.current > 0) {
-          const z = distance.current - BOSS_Z;
+        if (
+          bullet.phase === "boss" &&
+          bossActive.current &&
+          bossHealth.current > 0
+        ) {
+          const z = distance.current - BOSS_Z + bossAdvance.current;
           if (
             z <= oldZ + 0.35 &&
             z >= nextZ - 0.35 &&
@@ -1647,6 +1943,9 @@ function World({ status, runSeed, onFrameData, onEvent }) {
         if (state.clock.elapsedTime - bossHitAt.current > 0.1) {
           bossHitAt.current = state.clock.elapsedTime;
         }
+        if (bullet.heavy) {
+          bossAdvance.current = Math.max(0, bossAdvance.current - 0.12);
+        }
         spawnImpact(
           collisionX,
           bullet.y,
@@ -1713,62 +2012,186 @@ function World({ status, runSeed, onFrameData, onEvent }) {
         }
       });
 
-      if (!DEBUG_NO_ENEMIES) WAVES.forEach((wave, index) => {
-        const renderZ =
-          distance.current - wave.z + waveStates.current[index].advance;
-        if (
-          renderZ >= PLAYER_GATE_CONTACT_Z &&
-          !resolvedWaves.current.has(index)
-        ) {
-          resolvedWaves.current.add(index);
-          const survivors = waveEnemies.current[index].filter(
+      if (!DEBUG_NO_ENEMIES) {
+        let contactLosses = 0;
+        WAVES.forEach((wave, index) => {
+          const waveState = waveStates.current[index];
+          if (!waveState.unlocked) return;
+
+          waveEnemies.current[index].forEach((enemy) => {
+            if (!enemy.alive) return;
+            const renderZ =
+              distance.current -
+              wave.z -
+              enemy.zOffset +
+              waveState.advance;
+            if (renderZ < 1.25 || renderZ > 4.55) return;
+
+            let victim = findNearestArmyUnit(
+              armyUnits.current,
+              enemy.currentX,
+              renderZ,
+              playerX.current,
+            );
+            if (!victim) return;
+
+            const worldVictimX = playerX.current + victim.x;
+            const impulseX = clamp((worldVictimX - enemy.currentX) * 3.2, -2.2, 2.2);
+            if (
+              killArmyUnit(
+                victim,
+                state.clock.elapsedTime,
+                impulseX,
+                1.15,
+              )
+            ) {
+              troops.current = Math.max(0, troops.current - 1);
+              contactLosses += 1;
+              lastPlayerDeath.current = {
+                source: "enemy",
+                enemyId: enemy.id,
+                victimId: victim.index,
+                enemyX: enemy.currentX,
+                victimX: worldVictimX,
+                at: state.clock.elapsedTime,
+              };
+            }
+
+            enemy.alive = false;
+            enemy.hitAt = state.clock.elapsedTime;
+            enemy.deathAt = state.clock.elapsedTime;
+            enemy.vx = -impulseX * 0.7;
+            enemy.vy = 2.5 + Math.random() * 0.7;
+            enemy.vz = -0.7;
+            enemy.spinX = 7 + Math.random() * 4;
+            enemy.spinY = 6 + Math.random() * 4;
+            enemy.spinZ = (enemy.currentX >= worldVictimX ? 1 : -1) * 8;
+            spawnImpact(
+              (worldVictimX + enemy.currentX) * 0.5,
+              0.68,
+              renderZ,
+              "#fff16a",
+              0.28,
+              1.5,
+            );
+          });
+
+          const anyAlive = waveEnemies.current[index].some(
             (enemy) => enemy.alive,
           );
-          if (survivors.length > 0) {
-            const losses = Math.min(
-              troops.current,
-              Math.max(1, Math.ceil(survivors.length * 0.58)),
-            );
-            troops.current -= losses;
-            killArmyUnits(armyUnits.current, losses, state.clock.elapsedTime);
-            survivors.forEach((enemy) => {
-              enemy.alive = false;
-              enemy.deathAt = state.clock.elapsedTime;
-              enemy.vx = enemy.x * 0.8;
-              enemy.vy = 1.8 + Math.random() * 0.5;
-              enemy.vz = 1.2;
-              enemy.spinX = 5;
-              enemy.spinY = 6;
-              enemy.spinZ = enemy.x >= 0 ? -7 : 7;
-            });
-            shake.current = 0.34;
-            onEvent({ type: "wave-hit", losses, troops: troops.current });
-          } else if (!clearedWaves.current.has(index)) {
+          if (!anyAlive && !clearedWaves.current.has(index)) {
             clearedWaves.current.add(index);
             combo.current += 1;
             onEvent({ type: "wave-clear", combo: combo.current });
           }
-          if (troops.current <= 0 && !finished.current) {
-            finished.current = true;
-            onEvent({ type: "lost" });
-          }
+        });
+
+        if (contactLosses > 0) {
+          shake.current = Math.max(shake.current, 0.24);
+          onEvent({
+            type: "wave-hit",
+            losses: contactLosses,
+            troops: troops.current,
+          });
         }
-      });
+        if (troops.current <= 0 && !finished.current) {
+          finished.current = true;
+          onEvent({ type: "lost" });
+        }
+      }
 
       if (distance.current >= TRACK_END && troops.current > 0) {
         bossActive.current = true;
-        bossAttackTimer.current -= delta;
-        if (bossAttackTimer.current <= 0 && bossHealth.current > 0) {
-          bossAttackTimer.current = 1.35;
-          const losses = Math.min(
-            troops.current,
-            Math.max(1, Math.ceil(1 + (100 - bossHealth.current) / 28)),
+        const bossZ = distance.current - BOSS_Z + bossAdvance.current;
+        if (bossHealth.current > 0) {
+          bossAdvance.current = Math.min(
+            7.1,
+            bossAdvance.current +
+              delta * (0.72 + (100 - bossHealth.current) * 0.0035),
           );
-          troops.current -= losses;
-          killArmyUnits(armyUnits.current, losses, state.clock.elapsedTime);
-          shake.current = 0.24;
-          onEvent({ type: "boss-hit", losses, troops: troops.current });
+          bossVolleyTimer.current -= delta;
+          bossShockwaveTimer.current -= delta;
+          if (bossVolleyTimer.current <= 0) {
+            bossVolleyTimer.current = 1.5;
+            spawnBossVolley(state.clock.elapsedTime);
+          }
+          if (bossZ > -7.4 && bossShockwaveTimer.current <= 0) {
+            bossShockwaveTimer.current = 3.5;
+            bossShockwave.current = {
+              at: state.clock.elapsedTime,
+              z: bossZ + 0.2,
+            };
+            const victims = armyUnits.current
+              .filter((unit) => unit.active && !unit.dying)
+              .sort((a, b) => a.z - b.z)
+              .slice(0, 2);
+            victims.forEach((victim) => {
+              if (
+                killArmyUnit(
+                  victim,
+                  state.clock.elapsedTime,
+                  victim.x * 1.8,
+                  1.4,
+                )
+              ) {
+                troops.current = Math.max(0, troops.current - 1);
+              }
+            });
+            shake.current = 0.32;
+            onEvent({
+              type: "boss-shockwave",
+              losses: victims.length,
+              troops: troops.current,
+            });
+          }
         }
+
+        bossProjectiles.current.forEach((projectile) => {
+          if (!projectile.active) return;
+          projectile.life -= delta;
+          projectile.x += projectile.vx * delta;
+          projectile.z += projectile.vz * delta;
+          if (projectile.life <= 0 || projectile.z > 5.2) {
+            projectile.active = false;
+            return;
+          }
+          const victim = findNearestArmyUnit(
+            armyUnits.current,
+            projectile.x,
+            projectile.z,
+            playerX.current,
+          );
+          if (!victim) return;
+          projectile.active = false;
+          if (
+            killArmyUnit(
+              victim,
+              state.clock.elapsedTime,
+              projectile.vx * 0.35,
+              1.25,
+            )
+          ) {
+            troops.current = Math.max(0, troops.current - 1);
+            lastPlayerDeath.current = {
+              source: "boss-projectile",
+              victimId: victim.index,
+              projectileX: projectile.x,
+              victimX: playerX.current + victim.x,
+              at: state.clock.elapsedTime,
+            };
+          }
+          spawnImpact(
+            playerX.current + victim.x,
+            0.7,
+            victim.z,
+            "#ff5a2f",
+            0.3,
+            1.6,
+          );
+          shake.current = Math.max(shake.current, 0.2);
+          onEvent({ type: "boss-projectile-hit", troops: troops.current });
+        });
+
         if (bossHealth.current <= 0 && !finished.current) {
           finished.current = true;
           onEvent({
@@ -1840,6 +2263,12 @@ function World({ status, runSeed, onFrameData, onEvent }) {
             (wave) => wave.filter((enemy) => enemy.alive).length,
           ),
           waveStates: waveStates.current.map((wave) => ({ ...wave })),
+          lastPlayerDeath: lastPlayerDeath.current,
+          bossAdvance: bossAdvance.current,
+          activeBossProjectiles: bossProjectiles.current.filter(
+            (projectile) => projectile.active,
+          ).length,
+          bossShockwave: { ...bossShockwave.current },
           lastHit: lastHit.current,
           lastEnemyHit: lastEnemyHit.current,
           movementSamples: [...movementSamples.current],
@@ -1856,17 +2285,28 @@ function World({ status, runSeed, onFrameData, onEvent }) {
 
   return (
     <>
-      <color attach="background" args={["#72d4e8"]} />
+      <SkyEnvironment />
       <fog attach="fog" args={["#a8e6ef", 31, 92]} />
-      <ambientLight intensity={0.52} color="#c8f7ff" />
-      <hemisphereLight args={["#dfffff", "#075b79", 1.05]} />
+      <ambientLight intensity={0.36} color="#c8f7ff" />
+      <hemisphereLight args={["#dfffff", "#075b79", 0.82]} />
       <directionalLight
         position={[-8, 18, 10]}
-        intensity={1.7}
+        intensity={2.15}
         color="#fff0c8"
+        castShadow
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
+        shadow-camera-left={-8}
+        shadow-camera-right={8}
+        shadow-camera-top={14}
+        shadow-camera-bottom={-4}
       />
 
-      <mesh position={[0, -2.35, -30]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh
+        position={[0, -2.35, -30]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow
+      >
         <planeGeometry args={[180, 240]} />
         <meshStandardMaterial color="#087b98" metalness={0.15} roughness={0.4} />
       </mesh>
@@ -1917,6 +2357,8 @@ function World({ status, runSeed, onFrameData, onEvent }) {
         healthRef={bossHealth}
         activeRef={bossActive}
         hitRef={bossHitAt}
+        advanceRef={bossAdvance}
+        attackRef={bossAttackAt}
       />
       {!DEBUG_NO_ARMY && (
         <PlayerRig
@@ -1931,6 +2373,10 @@ function World({ status, runSeed, onFrameData, onEvent }) {
         />
       )}
       {!DEBUG_NO_PROJECTILES && <ProjectilePool bulletsRef={bullets} />}
+      {!DEBUG_NO_PROJECTILES && (
+        <BossProjectilePool projectilesRef={bossProjectiles} />
+      )}
+      {!DEBUG_NO_EFFECTS && <BossShockwave shockwaveRef={bossShockwave} />}
       {!DEBUG_NO_EFFECTS && <ImpactPool impactsRef={impacts} />}
     </>
   );
@@ -2176,6 +2622,14 @@ export function App() {
       } else if (event.type === "boss-hit") {
         showFlash(`CORE STRIKE  -${event.losses}`, "danger", 620);
         playTone(105, 0.13, "square", 0.03);
+      } else if (event.type === "boss-fire") {
+        playTone(92, 0.16, "sawtooth", 0.035);
+        playTone(210, 0.08, "square", 0.02, 0.03);
+      } else if (event.type === "boss-projectile-hit") {
+        playTone(118, 0.12, "square", 0.028);
+      } else if (event.type === "boss-shockwave") {
+        showFlash(`SHOCKWAVE  -${event.losses}`, "danger", 560);
+        playTone(70, 0.34, "sawtooth", 0.045);
       } else if (event.type === "won") {
         const score = event.score;
         setData((current) => ({
@@ -2251,6 +2705,7 @@ export function App() {
     <main className={`game-shell ${flash ? `feedback-${flash.tone}` : ""}`}>
       <Canvas
         key={runId}
+        shadows="percentage"
         dpr={[1, 1.45]}
         camera={{ position: [0, 7.55, 11.4], fov: 49, near: 0.1, far: 190 }}
         gl={{
