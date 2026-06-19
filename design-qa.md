@@ -1,7 +1,7 @@
-# Design QA — Skyline Legion v3
+# Design QA — Skyline Legion v4
 
 - Source visual truth: Codex thread ImageGen result, **Azure Utopia (Option 1)**.
-- Implementation URL: `http://127.0.0.1:4173/`
+- Implementation URL: `http://127.0.0.1:4180/`
 - Primary viewport: `390 × 844`
 - Additional viewports: `320 × 568`, `1200 × 900`
 - Evidence:
@@ -59,6 +59,21 @@ The revised implementation preserves the selected concept's portrait composition
 - Gate test before contact at track distance `29`: troop count `12`, right gate charge `1.0`, `resolved: false`.
 - Gate test after physical contact at distance `31`: troop count `30`, `resolved: true`; the chosen `+18` gate collapsed and disappeared.
 - Production build completed a full run to the victory screen with zero browser runtime errors.
+
+## v4 gameplay verification
+
+- Numeric gates now expose their actual signed reward. Negative values render red, positive values render cyan, every accepted projectile hit increases the displayed value, and contact applies that exact number.
+- Gate layouts are deterministically varied per run while preserving at least one recoverable route in every pair.
+- Normal volleys originate from active troop positions across the formation. The outer shooters produce visible edge-lane fire, with only a small lateral correction toward a real enemy target.
+- A hit on any member alerts the whole wave. Surviving enemies advance together and lightly track the player's horizontal position while retaining exact per-enemy collision and death state.
+- Enemy hit/death feedback now colors body, head and legs white, then applies squash, delayed launch, spin and shrink.
+- Added troops use staggered elastic scale-in, spring attraction and local crowd separation instead of appearing as an instant rigid grid.
+- Existing troops receive a gold upgrade pulse and expanding formation ring when a positive gate reward is applied.
+- Projectiles use a white core, gold glow and longer silhouette. Enemy, gate and Boss impacts include larger sparks and an expanding additive ring.
+- Boss armor, core and side pods participate in the white hit flash; Boss damage was rebalanced so the final encounter remains visible under a large upgraded formation.
+- Controlled gate test at distance `31`: selected gate resolved at displayed value `+40`, troop count changed from `12` to `52`, and the gate collapsed.
+- Controlled combat test measured `115–120 FPS` with `52` rendered troops, multiple active enemy waves and continuous edge-to-edge volleys.
+- Full production run completed with `230` survivors, combo `×5`, and zero browser runtime errors.
 
 ## Required fidelity surfaces
 

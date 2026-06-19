@@ -19,3 +19,8 @@ When implementing from a selected generated mock, treat that image as the source
 - Gate hits need visible impact sparks, flash and elastic squash/stretch. Gate rewards apply only when the formation physically reaches the selected gate.
 - Resolved gates must burst/collapse and disappear instead of remaining on the track.
 - Enemy deaths should visibly react to the incoming bullet with hit flash, squash and directional knockback/flight.
+- A hit on any enemy in a wave alerts the whole surviving wave; alerted enemies advance toward the player and lightly track the formation.
+- Normal volleys originate from visible troop gun positions and must cover edge enemies without obvious homing.
+- Numeric gates display their live signed value. Bullet hits increase that exact value, negative gates are red, positive gates are blue, and contact applies the displayed number.
+- Gate upgrades should add troops through staggered elastic spawning with crowd separation, while the existing formation flashes gold.
+- Enemy and boss hit feedback must flash the whole target white and use a clearly visible gold-white projectile and impact burst.
