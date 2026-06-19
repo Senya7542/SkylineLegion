@@ -1,5 +1,5 @@
-export const TRACK_END = 146;
-export const BOSS_Z = 155;
+export const TRACK_END = 170;
+export const BOSS_Z = 179;
 export const PLAYER_LIMIT = 1.34;
 export const LANE_X = 1.62;
 export const PLAYER_GATE_CONTACT_Z = 2.35;
@@ -9,16 +9,16 @@ export const MAX_VISIBLE_TROOPS = 96;
 
 const GATE_TEMPLATES = [
   { z: 28, left: [-14, -7], right: [2, 7] },
-  { z: 64, left: [-8, 0], right: [4, 11] },
-  { z: 98, left: [-18, -9], right: [-5, 3] },
-  { z: 128, left: [-12, -3], right: [1, 8] },
+  { z: 67, left: [-8, 0], right: [4, 11] },
+  { z: 108, left: [-18, -9], right: [-5, 3] },
+  { z: 145, left: [-12, -3], right: [1, 8] },
 ];
 
 export const WAVES = [
-  { z: 46, count: 18, speed: 1.75 },
-  { z: 81, count: 28, speed: 2.05 },
-  { z: 113, count: 40, speed: 2.35 },
-  { z: 140, count: 52, speed: 2.65 },
+  { z: 54, count: 36, speed: 1.9, gateIndex: 0 },
+  { z: 94, count: 48, speed: 2.2, gateIndex: 1 },
+  { z: 135, count: 64, speed: 2.5, gateIndex: 2 },
+  { z: 166, count: 80, speed: 2.8, gateIndex: 3 },
 ];
 
 const seeded = (seed) => {

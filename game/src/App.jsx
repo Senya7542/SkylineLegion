@@ -35,6 +35,7 @@ import {
   chooseEnemyTarget,
   createArmyUnit,
   createEnemy,
+  killArmyUnits,
   updateArmyUnits,
 } from "./gameSystems.js";
 
@@ -51,8 +52,11 @@ const DEBUG_SLOW = DEBUG_FLAGS.has("slow");
 const DEBUG_NO_ADVANCE = DEBUG_FLAGS.has("noAdvance");
 const DEBUG_STOP_AT = Number(DEBUG_FLAGS.get("stopAt")) || null;
 
-function Hovercraft({ active, rapidRef, playerXRef }) {
+function Hovercraft({ active, rapidRef, playerXRef, cannonPulseRef }) {
   const ref = useRef();
+  const cannon = useRef();
+  const cannonMaterial = useRef();
+  const engineMaterials = useRef([]);
   const previousX = useRef(0);
 
   useFrame((state, delta) => {
@@ -67,53 +71,87 @@ function Hovercraft({ active, rapidRef, playerXRef }) {
       10,
       delta,
     );
+    const cannonAge = t - cannonPulseRef.current;
+    const cannonKick =
+      cannonAge >= 0 && cannonAge < 0.24
+        ? Math.sin((cannonAge / 0.24) * Math.PI) * 0.26
+        : 0;
+    if (cannon.current) cannon.current.position.z = -0.88 + cannonKick;
+    if (cannonMaterial.current) {
+      cannonMaterial.current.emissiveIntensity = 0.8 + cannonKick * 12;
+    }
+    engineMaterials.current.forEach((material) => {
+      if (material) material.opacity = active ? 0.86 + Math.sin(t * 18) * 0.1 : 0.3;
+    });
   });
 
   return (
-    <group ref={ref} position={[0, 0.5, 4.35]}>
-      <mesh>
-        <boxGeometry args={[1.2, 0.26, 1.55]} />
+    <group ref={ref} position={[0, 0.48, 3.72]}>
+      <mesh rotation={[0, Math.PI / 4, 0]}>
+        <octahedronGeometry args={[0.78, 0]} />
         <meshStandardMaterial
           color="#e7fdff"
           metalness={0.7}
           roughness={0.22}
         />
       </mesh>
-      <mesh position={[0, 0.23, -0.1]}>
-        <boxGeometry args={[0.68, 0.26, 0.7]} />
+      <mesh position={[0, 0.26, 0.08]} scale={[0.7, 0.58, 1.05]}>
+        <sphereGeometry args={[0.48, 12, 8]} />
         <meshStandardMaterial
           color="#078dc8"
+          emissive="#0a7eb5"
+          emissiveIntensity={0.45}
           metalness={0.65}
           roughness={0.2}
         />
       </mesh>
-      <mesh position={[0, 0.33, -0.7]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.1, 0.14, 1.28, 12]} />
+      <mesh
+        ref={cannon}
+        position={[0, 0.34, -0.88]}
+        rotation={[Math.PI / 2, 0, 0]}
+      >
+        <cylinderGeometry args={[0.11, 0.15, 1.42, 12]} />
         <meshStandardMaterial
+          ref={cannonMaterial}
           color="#eaffff"
-          emissive="#52dcff"
-          emissiveIntensity={0.75}
+          emissive="#ffd84d"
+          emissiveIntensity={0.8}
         />
       </mesh>
-      {[-0.7, 0.7].map((side) => (
-        <group key={side} position={[side, -0.02, 0.06]}>
-          <mesh>
-            <boxGeometry args={[0.34, 0.14, 1.22]} />
+      {[-1, 1].map((side, sideIndex) => (
+        <group
+          key={side}
+          position={[side * 0.83, -0.02, 0.12]}
+          rotation={[0, side * -0.18, side * -0.04]}
+        >
+          <mesh rotation={[0, 0, side * 0.08]}>
+            <boxGeometry args={[0.78, 0.11, 1.16]} />
             <meshStandardMaterial
-              color="#075a88"
+              color="#dffaff"
+              emissive="#0b83bd"
+              emissiveIntensity={0.55}
               metalness={0.82}
               roughness={0.18}
             />
           </mesh>
-          <mesh position={[0, -0.06, 0.42]}>
-            <cylinderGeometry args={[0.13, 0.13, 0.18, 16]} />
-            <meshBasicMaterial color="#62f4ff" toneMapped={false} />
+          <mesh position={[side * 0.08, -0.08, 0.58]} rotation={[Math.PI / 2, 0, 0]}>
+            <coneGeometry args={[0.17, 0.85, 10]} />
+            <meshBasicMaterial
+              ref={(material) => {
+                engineMaterials.current[sideIndex] = material;
+              }}
+              color="#7ff8ff"
+              transparent
+              opacity={0.86}
+              toneMapped={false}
+              blending={THREE.AdditiveBlending}
+            />
           </mesh>
         </group>
       ))}
       <pointLight
-        position={[0, 0.25, -0.92]}
-        color={rapidRef.current ? "#efff72" : "#59eaff"}
+        position={[0, 0.25, -1.08]}
+        color={rapidRef.current ? "#fff06a" : "#ffd84d"}
         intensity={active ? (rapidRef.current ? 5 : 3) : 0.5}
         distance={4}
       />
@@ -125,12 +163,15 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
   const bodies = useRef();
   const heads = useRef();
   const guns = useRef();
+  const flashBodies = useRef();
+  const flashHeads = useRef();
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);
+  const flashColor = useMemo(() => new THREE.Color(), []);
   const previousCount = useRef(0);
 
   useEffect(() => {
-    [bodies, heads, guns].forEach((ref) => {
+    [bodies, heads, guns, flashBodies, flashHeads].forEach((ref) => {
       if (ref.current) {
         ref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       }
@@ -138,7 +179,13 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
   }, []);
 
   useFrame((state, delta) => {
-    if (!bodies.current || !heads.current || !guns.current) return;
+    if (
+      !bodies.current ||
+      !heads.current ||
+      !guns.current ||
+      !flashBodies.current ||
+      !flashHeads.current
+    ) return;
     const time = state.clock.elapsedTime;
     const count = Math.min(troopsRef.current, MAX_VISIBLE_TROOPS);
 
@@ -161,12 +208,16 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
         bodies.current.setMatrixAt(index, dummy.matrix);
         heads.current.setMatrixAt(index, dummy.matrix);
         guns.current.setMatrixAt(index, dummy.matrix);
+        flashBodies.current.setMatrixAt(index, dummy.matrix);
+        flashHeads.current.setMatrixAt(index, dummy.matrix);
         return;
       }
       const step = Math.abs(Math.sin(time * 8 + index * 0.7)) * 0.045;
-      const scale = unit.scale * 0.75;
+      const scale = unit.scale * 0.92;
       const glowing = time < unit.glowUntil;
-      color.set(glowing ? "#fff27a" : "#20bce9");
+      const hitFlashing = time < unit.hitUntil;
+      const flashing = glowing || hitFlashing;
+      color.set("#37d4ff");
 
       dummy.position.set(unit.x, 0.58 + step, unit.z);
       dummy.rotation.set(0, 0, 0);
@@ -174,53 +225,97 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
       dummy.updateMatrix();
       bodies.current.setMatrixAt(index, dummy.matrix);
       bodies.current.setColorAt(index, color);
+      dummy.scale.multiplyScalar(flashing ? 1.08 : 0);
+      dummy.updateMatrix();
+      flashBodies.current.setMatrixAt(index, dummy.matrix);
+      flashBodies.current.setColorAt(
+        index,
+        flashColor.set(hitFlashing ? "#ffffff" : "#fff16a"),
+      );
 
       dummy.position.set(unit.x, 0.84 + step, unit.z);
       dummy.scale.setScalar(scale);
       dummy.updateMatrix();
       heads.current.setMatrixAt(index, dummy.matrix);
-      heads.current.setColorAt(index, color.set(glowing ? "#ffffff" : "#eaffff"));
+      heads.current.setColorAt(index, color.set("#f7ffff"));
+      dummy.scale.multiplyScalar(flashing ? 1.1 : 0);
+      dummy.updateMatrix();
+      flashHeads.current.setMatrixAt(index, dummy.matrix);
+      flashHeads.current.setColorAt(
+        index,
+        flashColor.set(hitFlashing ? "#ffffff" : "#fff7a8"),
+      );
 
       dummy.position.set(unit.x + 0.08, 0.65 + step, unit.z - 0.08);
       dummy.rotation.set(Math.PI / 2, 0, 0);
       dummy.scale.setScalar(scale);
       dummy.updateMatrix();
       guns.current.setMatrixAt(index, dummy.matrix);
-      guns.current.setColorAt(index, color.set(glowing ? "#fff27a" : "#f1ffff"));
+      guns.current.setColorAt(index, color.set("#f1ffff"));
     });
     bodies.current.instanceMatrix.needsUpdate = true;
     heads.current.instanceMatrix.needsUpdate = true;
     guns.current.instanceMatrix.needsUpdate = true;
+    flashBodies.current.instanceMatrix.needsUpdate = true;
+    flashHeads.current.instanceMatrix.needsUpdate = true;
     if (bodies.current.instanceColor) bodies.current.instanceColor.needsUpdate = true;
     if (heads.current.instanceColor) heads.current.instanceColor.needsUpdate = true;
     if (guns.current.instanceColor) guns.current.instanceColor.needsUpdate = true;
+    if (flashBodies.current.instanceColor) {
+      flashBodies.current.instanceColor.needsUpdate = true;
+    }
+    if (flashHeads.current.instanceColor) {
+      flashHeads.current.instanceColor.needsUpdate = true;
+    }
   });
 
   return (
     <group>
       <instancedMesh ref={bodies} args={[null, null, MAX_VISIBLE_TROOPS]}>
-        <capsuleGeometry args={[0.085, 0.2, 3, 7]} />
+        <capsuleGeometry args={[0.105, 0.25, 3, 7]} />
         <meshStandardMaterial
-          color="#20bce9"
+          color="#37d4ff"
           vertexColors
-          emissive="#087eae"
-          emissiveIntensity={0.18}
+          emissive="#079ed3"
+          emissiveIntensity={0.62}
           metalness={0.4}
           roughness={0.3}
         />
       </instancedMesh>
       <instancedMesh ref={heads} args={[null, null, MAX_VISIBLE_TROOPS]}>
-        <sphereGeometry args={[0.115, 8, 8]} />
+        <sphereGeometry args={[0.14, 8, 8]} />
         <meshStandardMaterial
           color="#eaffff"
           vertexColors
-          emissive="#108bc7"
-          emissiveIntensity={0.22}
+          emissive="#38cfff"
+          emissiveIntensity={0.48}
         />
       </instancedMesh>
       <instancedMesh ref={guns} args={[null, null, MAX_VISIBLE_TROOPS]}>
-        <cylinderGeometry args={[0.022, 0.03, 0.3, 6]} />
+        <cylinderGeometry args={[0.026, 0.034, 0.34, 6]} />
         <meshStandardMaterial color="#f1ffff" vertexColors metalness={0.8} />
+      </instancedMesh>
+      <instancedMesh ref={flashBodies} args={[null, null, MAX_VISIBLE_TROOPS]}>
+        <capsuleGeometry args={[0.105, 0.25, 3, 7]} />
+        <meshBasicMaterial
+          color="#ffffff"
+          vertexColors
+          toneMapped={false}
+          transparent
+          opacity={0.95}
+          depthWrite={false}
+        />
+      </instancedMesh>
+      <instancedMesh ref={flashHeads} args={[null, null, MAX_VISIBLE_TROOPS]}>
+        <sphereGeometry args={[0.14, 8, 8]} />
+        <meshBasicMaterial
+          color="#ffffff"
+          vertexColors
+          toneMapped={false}
+          transparent
+          opacity={0.95}
+          depthWrite={false}
+        />
       </instancedMesh>
     </group>
   );
@@ -318,6 +413,7 @@ function PlayerRig({
   rapidRef,
   unitsRef,
   upgradePulseRef,
+  cannonPulseRef,
   active,
 }) {
   const ref = useRef();
@@ -343,6 +439,7 @@ function PlayerRig({
         active={active}
         rapidRef={rapidRef}
         playerXRef={playerXRef}
+        cannonPulseRef={cannonPulseRef}
       />
     </group>
   );
@@ -365,10 +462,11 @@ function ProjectilePool({ bulletsRef }) {
       } else {
         dummy.position.set(bullet.x, bullet.y, bullet.z);
         dummy.rotation.set(0, 0, -bullet.vx * 0.035);
+        const heavyScale = bullet.heavy ? 2.35 : 1;
         dummy.scale.set(
-          bullet.rapid ? 1.55 : 1.25,
-          bullet.rapid ? 1.55 : 1.25,
-          bullet.rapid ? 4.5 : 3.2,
+          (bullet.rapid ? 1.55 : 1.25) * heavyScale,
+          (bullet.rapid ? 1.55 : 1.25) * heavyScale,
+          (bullet.rapid ? 4.5 : 3.2) * (bullet.heavy ? 1.55 : 1),
         );
       }
       dummy.updateMatrix();
@@ -385,7 +483,7 @@ function ProjectilePool({ bulletsRef }) {
       <instancedMesh ref={glow} args={[null, null, MAX_BULLETS]}>
         <sphereGeometry args={[0.068, 6, 6]} />
         <meshBasicMaterial
-          color="#ffba32"
+          color="#ffd23f"
           transparent
           opacity={0.8}
           toneMapped={false}
@@ -404,7 +502,6 @@ function ImpactPool({ impactsRef }) {
   const particles = useRef();
   const rings = useRef();
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const color = useMemo(() => new THREE.Color(), []);
   const particlesPerImpact = 8;
   useEffect(() => {
     [particles, rings].forEach((ref) => {
@@ -438,7 +535,6 @@ function ImpactPool({ impactsRef }) {
         dummy.scale.setScalar((impact.size || 1) * (1.1 - progress * 0.65));
         dummy.updateMatrix();
         particles.current.setMatrixAt(matrixIndex, dummy.matrix);
-        particles.current.setColorAt(matrixIndex, color.set(impact.color));
       }
       if (!impact.active) {
         dummy.scale.setScalar(0);
@@ -453,7 +549,6 @@ function ImpactPool({ impactsRef }) {
     });
     particles.current.instanceMatrix.needsUpdate = true;
     rings.current.instanceMatrix.needsUpdate = true;
-    if (particles.current.instanceColor) particles.current.instanceColor.needsUpdate = true;
   });
   return (
     <group>
@@ -462,7 +557,11 @@ function ImpactPool({ impactsRef }) {
         args={[null, null, MAX_IMPACTS * particlesPerImpact]}
       >
         <octahedronGeometry args={[0.065, 0]} />
-        <meshBasicMaterial vertexColors toneMapped={false} />
+        <meshBasicMaterial
+          color="#fff16a"
+          toneMapped={false}
+          blending={THREE.AdditiveBlending}
+        />
       </instancedMesh>
       <instancedMesh ref={rings} args={[null, null, MAX_IMPACTS]}>
         <torusGeometry args={[0.12, 0.018, 5, 18]} />
@@ -674,12 +773,14 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
   const bodies = useRef();
   const heads = useRef();
   const legs = useRef();
+  const flashBodies = useRef();
+  const flashHeads = useRef();
   const alertRing = useRef();
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const bodyColor = useMemo(() => new THREE.Color(), []);
 
   useEffect(() => {
-    [bodies, heads, legs].forEach((ref) => {
+    [bodies, heads, legs, flashBodies, flashHeads].forEach((ref) => {
       if (ref.current) {
         ref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       }
@@ -687,7 +788,13 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
   }, []);
 
   useFrame((state) => {
-    if (!bodies.current || !heads.current || !legs.current) return;
+    if (
+      !bodies.current ||
+      !heads.current ||
+      !legs.current ||
+      !flashBodies.current ||
+      !flashHeads.current
+    ) return;
     const t = state.clock.elapsedTime;
     if (alertRing.current) {
       const alertAge = t - waveState.alertedAt;
@@ -746,6 +853,8 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
         bodies.current.setMatrixAt(index, dummy.matrix);
         heads.current.setMatrixAt(index, dummy.matrix);
         legs.current.setMatrixAt(index, dummy.matrix);
+        flashBodies.current.setMatrixAt(index, dummy.matrix);
+        flashHeads.current.setMatrixAt(index, dummy.matrix);
         return;
       }
 
@@ -754,24 +863,32 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
       dummy.scale.set(scaleX, scaleY, scaleZ);
       dummy.updateMatrix();
       bodies.current.setMatrixAt(index, dummy.matrix);
-      bodyColor.set(hit > 0 ? "#ffffff" : "#e54f32");
+      bodyColor.set("#e54f32");
       bodies.current.setColorAt(index, bodyColor);
+      dummy.scale.multiplyScalar(hit > 0 ? 1.08 : 0);
+      dummy.updateMatrix();
+      flashBodies.current.setMatrixAt(index, dummy.matrix);
 
       dummy.position.set(x, y + 0.3 * scaleY, z);
       dummy.scale.setScalar(0.95 * scaleX);
       dummy.updateMatrix();
       heads.current.setMatrixAt(index, dummy.matrix);
-      heads.current.setColorAt(index, bodyColor.set(hit > 0 ? "#ffffff" : "#ffbc83"));
+      heads.current.setColorAt(index, bodyColor.set("#ffbc83"));
+      dummy.scale.multiplyScalar(hit > 0 ? 1.1 : 0);
+      dummy.updateMatrix();
+      flashHeads.current.setMatrixAt(index, dummy.matrix);
 
       dummy.position.set(x, y - 0.12 * scaleY, z);
       dummy.scale.set(scaleX, scaleY, scaleZ);
       dummy.updateMatrix();
       legs.current.setMatrixAt(index, dummy.matrix);
-      legs.current.setColorAt(index, bodyColor.set(hit > 0 ? "#ffffff" : "#51222c"));
+      legs.current.setColorAt(index, bodyColor.set("#51222c"));
     });
     bodies.current.instanceMatrix.needsUpdate = true;
     heads.current.instanceMatrix.needsUpdate = true;
     legs.current.instanceMatrix.needsUpdate = true;
+    flashBodies.current.instanceMatrix.needsUpdate = true;
+    flashHeads.current.instanceMatrix.needsUpdate = true;
     if (bodies.current.instanceColor) {
       bodies.current.instanceColor.needsUpdate = true;
     }
@@ -820,6 +937,26 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
         <boxGeometry args={[0.38, 0.32, 0.07]} />
         <meshStandardMaterial color="#51222c" vertexColors />
       </instancedMesh>
+      <instancedMesh ref={flashBodies} args={[null, null, enemies.length]}>
+        <dodecahedronGeometry args={[0.23, 0]} />
+        <meshBasicMaterial
+          color="#ffffff"
+          toneMapped={false}
+          transparent
+          opacity={0.98}
+          depthWrite={false}
+        />
+      </instancedMesh>
+      <instancedMesh ref={flashHeads} args={[null, null, enemies.length]}>
+        <sphereGeometry args={[0.14, 8, 8]} />
+        <meshBasicMaterial
+          color="#ffffff"
+          toneMapped={false}
+          transparent
+          opacity={0.98}
+          depthWrite={false}
+        />
+      </instancedMesh>
     </group>
   );
 }
@@ -833,7 +970,8 @@ function Boss({ distanceRef, healthRef, activeRef, hitRef }) {
     if (!ref.current) return;
     const z = distanceRef.current - BOSS_Z;
     ref.current.position.z = z;
-    ref.current.visible = distanceRef.current >= 135 && z > -40 && z < 8;
+    ref.current.visible =
+      distanceRef.current >= TRACK_END - 12 && z > -40 && z < 8;
     ref.current.rotation.y = Math.sin(state.clock.elapsedTime * 0.65) * 0.08;
     const hitAge = state.clock.elapsedTime - hitRef.current;
     const hit = hitAge >= 0 && hitAge < 0.11 ? 1 - hitAge / 0.11 : 0;
@@ -1056,6 +1194,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
   );
   const waveStates = useRef(
     WAVES.map(() => ({
+      unlocked: false,
       alerted: false,
       alertedAt: -10,
       advance: 0,
@@ -1083,6 +1222,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
       speed: 18,
       vx: 0,
       rapid: false,
+      heavy: false,
       shooter: 0,
     })),
   );
@@ -1094,7 +1234,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
       z: 0,
       life: 0,
       duration: 0.24,
-      color: "#6cf4ff",
+      color: "#fff16a",
       size: 1,
     })),
   );
@@ -1104,6 +1244,8 @@ function World({ status, runSeed, onFrameData, onEvent }) {
   const bossHitAt = useRef(-10);
   const bossAttackTimer = useRef(1.2);
   const shotTimer = useRef(0);
+  const heavyShotTimer = useRef(0.55);
+  const cannonPulse = useRef(-10);
   const finished = useRef(false);
   const shake = useRef(0);
   const uiTimer = useRef(0);
@@ -1133,7 +1275,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
 
   const spawnVolley = (rapid) => {
     const activeShooters = armyUnits.current.filter(
-      (unit) => unit.active && unit.scale > 0.72,
+      (unit) => unit.active && !unit.dying && unit.scale > 0.72,
     );
     if (!activeShooters.length) return;
     const count = clamp(2 + Math.floor(troops.current / 15), 2, rapid ? 10 : 8);
@@ -1161,8 +1303,46 @@ function World({ status, runSeed, onFrameData, onEvent }) {
         ? clamp((target.x - shooterX) * 1.45, -3.2, 3.2)
         : 0;
       bullet.rapid = rapid;
+      bullet.heavy = false;
       bullet.shooter = shooter.index;
     });
+    const muzzle = sorted[Math.floor(sorted.length / 2)];
+    if (muzzle) {
+      spawnImpact(
+        playerX.current + muzzle.x,
+        0.72,
+        muzzle.z - 0.2,
+        "#fff16a",
+        0.12,
+        0.42,
+      );
+    }
+    onEvent({ type: "shoot", heavy: false });
+  };
+
+  const spawnHeavyShot = (time) => {
+    const bullet = bullets.current.find((item) => !item.active);
+    if (!bullet) return;
+    const target = chooseEnemyTarget(
+      waveEnemies.current,
+      waveStates.current,
+      playerX.current,
+      distance.current,
+    );
+    bullet.active = true;
+    bullet.x = playerX.current;
+    bullet.y = 0.83;
+    bullet.z = 3.28;
+    bullet.speed = 17.5;
+    bullet.vx = target
+      ? clamp((target.x - playerX.current) * 0.75, -1.3, 1.3)
+      : 0;
+    bullet.rapid = false;
+    bullet.heavy = true;
+    bullet.shooter = -1;
+    cannonPulse.current = time;
+    spawnImpact(playerX.current, 0.83, 3.08, "#fff16a", 0.2, 1.25);
+    onEvent({ type: "shoot", heavy: true });
   };
 
   useEffect(() => {
@@ -1264,9 +1444,14 @@ function World({ status, runSeed, onFrameData, onEvent }) {
 
       if (!DEBUG_NO_PHYSICS) {
         shotTimer.current -= delta;
+        heavyShotTimer.current -= delta;
         if (shotTimer.current <= 0) {
           spawnVolley(rapidRef.current);
           shotTimer.current = rapidRef.current ? 0.065 : 0.125;
+        }
+        if (heavyShotTimer.current <= 0) {
+          spawnHeavyShot(state.clock.elapsedTime);
+          heavyShotTimer.current = rapidRef.current ? 0.62 : 0.92;
         }
       }
 
@@ -1298,6 +1483,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
         });
 
         if (!DEBUG_NO_ENEMIES) WAVES.forEach((wave, waveIndex) => {
+          if (!waveStates.current[waveIndex].unlocked) return;
           waveEnemies.current[waveIndex].forEach((enemy) => {
             if (!enemy.alive) return;
             const z =
@@ -1341,7 +1527,8 @@ function World({ status, runSeed, onFrameData, onEvent }) {
           const gateState = gateStates.current[target.gateIndex];
           const gate = gates[target.gateIndex];
           const valueKey = `${target.side}Value`;
-          const increase = gate.hitStep * (bullet.rapid ? 2 : 1);
+          const increase =
+            gate.hitStep * (bullet.heavy ? 3 : bullet.rapid ? 2 : 1);
           gateState[valueKey] = clamp(
             gateState[valueKey] + increase,
             -99,
@@ -1352,10 +1539,11 @@ function World({ status, runSeed, onFrameData, onEvent }) {
             collisionX,
             bullet.y,
             target.z - 0.08,
-            gateColor(gateState[valueKey]),
+            "#fff16a",
             0.27,
-            1.15,
+            bullet.heavy ? 1.8 : 1.15,
           );
+          onEvent({ type: "impact", target: "gate", heavy: bullet.heavy });
           lastHit.current = {
             type: "gate",
             side: target.side,
@@ -1368,7 +1556,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
 
         if (target.type === "enemy") {
           const enemy = target.enemy;
-          enemy.hp -= 1;
+          enemy.hp -= bullet.heavy ? 3 : 1;
           enemy.hitAt = state.clock.elapsedTime;
           const waveState = waveStates.current[target.waveIndex];
           if (!waveState.alerted) {
@@ -1384,7 +1572,43 @@ function World({ status, runSeed, onFrameData, onEvent }) {
             at: state.clock.elapsedTime,
           };
           lastEnemyHit.current = lastHit.current;
-          spawnImpact(collisionX, bullet.y, target.z - 0.08, "#fff07a", 0.26, 1.2);
+          spawnImpact(
+            collisionX,
+            bullet.y,
+            target.z - 0.08,
+            "#fff16a",
+            bullet.heavy ? 0.34 : 0.26,
+            bullet.heavy ? 2.1 : 1.2,
+          );
+          onEvent({
+            type: "impact",
+            target: "enemy",
+            heavy: bullet.heavy,
+            killed: enemy.hp <= 0,
+          });
+          if (bullet.heavy) {
+            waveEnemies.current[target.waveIndex].forEach((nearby) => {
+              if (
+                nearby !== enemy &&
+                nearby.alive &&
+                Math.abs(nearby.currentX - enemy.currentX) < 0.72 &&
+                Math.abs(nearby.zOffset - enemy.zOffset) < 0.72
+              ) {
+                nearby.hp -= 1;
+                nearby.hitAt = state.clock.elapsedTime;
+                if (nearby.hp <= 0) {
+                  nearby.alive = false;
+                  nearby.deathAt = state.clock.elapsedTime;
+                  nearby.vx = (nearby.currentX >= enemy.currentX ? 1 : -1) * 1.2;
+                  nearby.vy = 2.4 + Math.random() * 0.7;
+                  nearby.vz = 1.4;
+                  nearby.spinX = 7;
+                  nearby.spinY = 8;
+                  nearby.spinZ = nearby.vx * -5;
+                }
+              }
+            });
+          }
           if (enemy.hp <= 0) {
             enemy.alive = false;
             enemy.deathAt = state.clock.elapsedTime;
@@ -1412,7 +1636,8 @@ function World({ status, runSeed, onFrameData, onEvent }) {
 
         bossHealth.current = Math.max(
           0,
-          bossHealth.current - (bullet.rapid ? 0.34 : 0.22),
+          bossHealth.current -
+            (bullet.heavy ? 2.4 : bullet.rapid ? 0.34 : 0.22),
         );
         lastHit.current = {
           type: "boss",
@@ -1422,7 +1647,15 @@ function World({ status, runSeed, onFrameData, onEvent }) {
         if (state.clock.elapsedTime - bossHitAt.current > 0.1) {
           bossHitAt.current = state.clock.elapsedTime;
         }
-        spawnImpact(collisionX, bullet.y, target.z - 0.75, "#fff08a", 0.34, 1.8);
+        spawnImpact(
+          collisionX,
+          bullet.y,
+          target.z - 0.75,
+          "#fff16a",
+          bullet.heavy ? 0.42 : 0.34,
+          bullet.heavy ? 2.8 : 1.8,
+        );
+        onEvent({ type: "impact", target: "boss", heavy: bullet.heavy });
         shake.current = Math.max(shake.current, 0.055);
       });
 
@@ -1435,12 +1668,15 @@ function World({ status, runSeed, onFrameData, onEvent }) {
           gateState.resolved = true;
           gateState.choice = side;
           gateState.resolvedAt = state.clock.elapsedTime;
+          if (waveStates.current[index]) {
+            waveStates.current[index].unlocked = true;
+          }
           for (let burst = -1; burst <= 1; burst += 1) {
             spawnImpact(
               (side === "left" ? -LANE_X : LANE_X) + burst * 0.48,
               1.35 + Math.abs(burst) * 0.35,
               renderZ,
-              gateColor(value),
+              "#fff16a",
               0.42,
               1.55,
             );
@@ -1456,6 +1692,11 @@ function World({ status, runSeed, onFrameData, onEvent }) {
             };
           } else {
             combo.current = 1;
+            killArmyUnits(
+              armyUnits.current,
+              previousTroops - troops.current,
+              state.clock.elapsedTime,
+            );
           }
           shake.current = value >= 0 ? 0.22 : 0.3;
           onEvent({
@@ -1489,6 +1730,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
               Math.max(1, Math.ceil(survivors.length * 0.58)),
             );
             troops.current -= losses;
+            killArmyUnits(armyUnits.current, losses, state.clock.elapsedTime);
             survivors.forEach((enemy) => {
               enemy.alive = false;
               enemy.deathAt = state.clock.elapsedTime;
@@ -1523,6 +1765,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
             Math.max(1, Math.ceil(1 + (100 - bossHealth.current) / 28)),
           );
           troops.current -= losses;
+          killArmyUnits(armyUnits.current, losses, state.clock.elapsedTime);
           shake.current = 0.24;
           onEvent({ type: "boss-hit", losses, troops: troops.current });
         }
@@ -1578,6 +1821,20 @@ function World({ status, runSeed, onFrameData, onEvent }) {
           troops: troops.current,
           combo: combo.current,
           activeBullets: bullets.current.filter((bullet) => bullet.active).length,
+          activeHeavyBullets: bullets.current.filter(
+            (bullet) => bullet.active && bullet.heavy,
+          ).length,
+          armyBounds: armyUnits.current
+            .filter((unit) => unit.active)
+            .reduce(
+              (bounds, unit) => ({
+                minX: Math.min(bounds.minX, unit.x),
+                maxX: Math.max(bounds.maxX, unit.x),
+                minZ: Math.min(bounds.minZ, unit.z),
+                maxZ: Math.max(bounds.maxZ, unit.z),
+              }),
+              { minX: 99, maxX: -99, minZ: 99, maxZ: -99 },
+            ),
           gateStates: gateStates.current.map((gate) => ({ ...gate })),
           aliveByWave: waveEnemies.current.map(
             (wave) => wave.filter((enemy) => enemy.alive).length,
@@ -1669,6 +1926,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
           rapidRef={rapidRef}
           unitsRef={armyUnits}
           upgradePulseRef={upgradePulse}
+          cannonPulseRef={cannonPulse}
           active={status === "playing"}
         />
       )}
@@ -1821,6 +2079,7 @@ export function App() {
   const flashTimer = useRef();
   const audioContext = useRef();
   const bestRef = useRef(best);
+  const sfxTimes = useRef({ shoot: 0, impact: 0 });
 
   const playTone = useCallback(
     (
@@ -1884,6 +2143,33 @@ export function App() {
       } else if (event.type === "wave-alert") {
         playTone(190, 0.12, "square", 0.022);
         playTone(150, 0.15, "sawtooth", 0.018, 0.08);
+      } else if (event.type === "shoot") {
+        const now = performance.now();
+        if (event.heavy || now - sfxTimes.current.shoot > 75) {
+          sfxTimes.current.shoot = now;
+          if (event.heavy) {
+            playTone(118, 0.16, "sawtooth", 0.04);
+            playTone(330, 0.08, "square", 0.018, 0.015);
+          } else {
+            playTone(285, 0.045, "square", 0.012);
+          }
+        }
+      } else if (event.type === "impact") {
+        const now = performance.now();
+        if (event.heavy || now - sfxTimes.current.impact > 55) {
+          sfxTimes.current.impact = now;
+          const frequency =
+            event.target === "boss" ? 105 : event.target === "gate" ? 520 : 210;
+          playTone(
+            frequency,
+            event.heavy ? 0.14 : 0.065,
+            event.target === "gate" ? "triangle" : "square",
+            event.heavy ? 0.038 : 0.017,
+          );
+          if (event.killed) {
+            playTone(92, 0.11, "sawtooth", 0.018, 0.018);
+          }
+        }
       } else if (event.type === "wave-hit") {
         showFlash(`-${event.losses}  防线受损`, "danger");
         playTone(145, 0.15, "sawtooth", 0.04);
@@ -1960,19 +2246,6 @@ export function App() {
   }, []);
 
   useEffect(() => () => clearTimeout(flashTimer.current), []);
-
-  useEffect(() => {
-    if (status !== "playing" || !sound) return undefined;
-    const timer = window.setInterval(() => {
-      playTone(
-        data.rapid ? 345 : 240,
-        data.rapid ? 0.032 : 0.042,
-        "square",
-        data.rapid ? 0.009 : 0.006,
-      );
-    }, data.rapid ? 115 : 250);
-    return () => window.clearInterval(timer);
-  }, [data.rapid, playTone, sound, status]);
 
   return (
     <main className={`game-shell ${flash ? `feedback-${flash.tone}` : ""}`}>

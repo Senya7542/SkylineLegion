@@ -24,3 +24,10 @@ When implementing from a selected generated mock, treat that image as the source
 - Numeric gates display their live signed value. Bullet hits increase that exact value, negative gates are red, positive gates are blue, and contact applies the displayed number.
 - Gate upgrades should add troops through staggered elastic spawning with crowd separation, while the existing formation flashes gold.
 - Enemy and boss hit feedback must flash the whole target white and use a clearly visible gold-white projectile and impact burst.
+- The aircraft is the direct-control anchor, formation center, heavy cannon and future skill carrier; never reduce it to decorative scenery.
+- Troops form a bounded elastic cluster around the aircraft instead of a rigid grid. New troops spawn at the cluster center and physically push nearby troops outward.
+- Player and enemy soldiers should read at a comparable visual scale; elite enemies may be larger later.
+- Enemy waves remain untargetable and passive until the gate for their region has resolved. Each region needs enough gate-to-wave distance and enemy mass to build pressure.
+- Use an independent unlit overlay for unmistakable full-target white hit flashes and gold upgrade flashes.
+- Normal bullets, heavy cannon rounds, muzzle flashes, impact sparks and rings share one white-core/gold-glow visual language.
+- Firing and impact sounds must be driven by real combat events and rate-limited when many projectiles land together.

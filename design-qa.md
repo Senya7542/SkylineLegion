@@ -75,6 +75,26 @@ The revised implementation preserves the selected concept's portrait composition
 - Controlled combat test measured `115–120 FPS` with `52` rendered troops, multiple active enemy waves and continuous edge-to-edge volleys.
 - Full production run completed with `230` survivors, combo `×5`, and zero browser runtime errors.
 
+## v4.1 aircraft and crowd verification
+
+- Source visual truth: `C:/Users/Yoru17/AppData/Local/Temp/codex-clipboard-056adeb5-4625-4ab4-af6a-336bbb1b72d4.png`.
+- Implementation evidence: `game/.playwright-cli/page-2026-06-19T12-19-19-479Z.png`.
+- Combined comparison evidence: `C:/Users/Yoru17/AppData/Local/Temp/v4-1-comparison.png`.
+- Comparison viewport/state: portrait active gameplay after the first positive gate, with an upgraded player formation and continuous fire.
+- Full-view comparison: both compositions now use a visible aircraft as the formation anchor, a surrounding blue player crowd, forward projectile lanes, numeric gates and distant enemy mass. The implementation intentionally keeps the existing low-poly real-time Azure Utopia environment instead of matching the concept render's offline-model detail.
+- Focused gameplay comparison: the aircraft now leads and tilts with direct input, troops form a bounded elastic cluster around its forward/side area, and a larger heavy round is visibly distinct from troop volleys while sharing the same gold-white visual language.
+- [Fixed P1] The aircraft was decorative and had no combat role. It is now the direct-control anchor, heavy cannon and formation center.
+- [Fixed P1] Player troops formed a rigid grid and new units emerged from behind. Units now spawn at the cluster center and separate through spring attraction, pairwise repulsion, damping and X/Z constraints.
+- [Fixed P1] Enemy waves could be hit before their region gate resolved. Targeting and collision now require the corresponding gate to unlock the wave.
+- [Fixed P2] Player/enemy scale and player readability diverged. Player geometry and emissive white-blue materials were enlarged and brightened.
+- [Fixed P2] Instance tinting did not guarantee visible hit flashes. Player and enemy units now use independent unlit overlay instances for white damage flashes and gold upgrade flashes.
+- [Fixed P2] Projectile and impact effects mixed gate colors and could render black instance artifacts. All combat projectiles, muzzle flashes, sparks and rings now use a fixed white-core/gold-glow palette.
+- [Fixed P2] Audio was a detached repeating timer. Volley, heavy cannon, enemy/gate/Boss impacts and kills now emit rate-limited event-driven sound cues.
+- Region verification before first gate contact at distance `24`: all four wave states reported `unlocked: false`, `alerted: false`, and enemy counts remained `36/48/64/80`.
+- Crowd bounds with `51` visible troops stayed within approximately X `-1.11..1.15` and Z `1.97..3.42` before the final centering polish; the simulation clamps longitudinal movement to prevent units being ejected.
+- Performance remained approximately `109–112 FPS` in the active high-effect development sample.
+- Final production run completed with `238` survivors, combo `×5`, and zero browser runtime errors.
+
 ## Required fidelity surfaces
 
 - Fonts and typography: system display and Chinese UI fallbacks render consistently without external font requests.
@@ -96,6 +116,7 @@ The revised implementation preserves the selected concept's portrait composition
 ## Follow-up polish
 
 - P3: bespoke character and environment models would improve concept-art fidelity further.
+- P3: a bespoke aircraft model with authored wing silhouette, cockpit, engine nozzles and animation would materially improve the concept-art match.
 - P3: code splitting can reduce the current Three.js initial JavaScript payload.
 
 final result: passed
