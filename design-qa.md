@@ -1,4 +1,4 @@
-# Design QA — Skyline Legion v2
+# Design QA — Skyline Legion v3
 
 - Source visual truth: Codex thread ImageGen result, **Azure Utopia (Option 1)**.
 - Implementation URL: `http://127.0.0.1:4173/`
@@ -10,6 +10,10 @@
   - `game/output/playwright/mobile-boss-v2.png`
   - `game/output/playwright/mobile-victory-v2.png`
   - `game/output/playwright/desktop-start-v2.png`
+  - `game/output/playwright/v3-gate-before-contact.png`
+  - `game/output/playwright/v3-gate-after-contact.png`
+  - `game/output/playwright/v3-precise-enemy-hits.png`
+  - `game/output/playwright/v3-victory.png`
 - Tested states: menu, gate charging, wave combat, pause/resume, muted audio, drone upgrade, Boss combat, victory, replay, local high score.
 
 ## Full-view comparison evidence
@@ -37,6 +41,24 @@ The revised implementation preserves the selected concept's portrait composition
 - [Fixed P2] The distant ring structure collided visually with the HUD.
 - [Fixed P2] External font loading made typography dependent on network access.
 - [Fixed P2] Unused post-processing dependencies increased complexity and bundle size.
+- [Fixed P1] Visible player/world motion was driven by 10 Hz React snapshots, producing stutter despite a high canvas frame rate.
+- [Fixed P1] Bullets were decorative and enemy deaths were resolved by aggregate wave damage, so a right-side hit could remove an unrelated soldier.
+- [Fixed P1] Gate charge was time/alignment based instead of projectile-hit based, and rewards were granted before the formation visibly crossed the gate.
+- [Fixed P1] Resolved gates remained visible instead of bursting and collapsing away.
+- [Fixed P2] Hundreds of independent meshes and animation callbacks increased CPU and draw-call cost.
+
+## v3 interaction verification
+
+- All player, road, gate, enemy, projectile and impact positions now update every animation frame; React state is reserved for the HUD.
+- Player input uses frame-rate-independent damping and direct pointer coordinates from the canvas bounds.
+- Browser instrumentation measured 116–120 FPS in the current test environment.
+- A controlled movement test at 120 FPS produced 69 distinct interpolated positions rather than low-frequency jumps.
+- Projectiles use swept collision checks and stop on their first target.
+- Controlled right-lane test: bullet X `0.718` hit enemy X `0.510`; only that enemy object received damage/death state.
+- Enemy deaths apply hit flash, squash and directional knockback/flight based on the impacting bullet.
+- Gate test before contact at track distance `29`: troop count `12`, right gate charge `1.0`, `resolved: false`.
+- Gate test after physical contact at distance `31`: troop count `30`, `resolved: true`; the chosen `+18` gate collapsed and disappeared.
+- Production build completed a full run to the victory screen with zero browser runtime errors.
 
 ## Required fidelity surfaces
 
