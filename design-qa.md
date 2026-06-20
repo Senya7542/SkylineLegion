@@ -173,4 +173,79 @@ The revised implementation preserves the selected concept's portrait composition
 - P3: add authored Boss muzzle, shockwave and death animation clips once the external model sockets are available.
 - P3: split the current Three.js bundle to reduce initial JavaScript payload.
 
+## v4.3 feedback visibility, free crowd and seamless environment verification
+
+- Source visual truth: `C:/Users/Yoru17/AppData/Local/Temp/codex-clipboard-056adeb5-4625-4ab4-af6a-336bbb1b72d4.png`.
+- Full-view implementation evidence: `game/.playwright-cli/page-2026-06-20T03-35-37-152Z.png`.
+- Upgrade feedback evidence: `game/.playwright-cli/page-2026-06-20T03-47-16-039Z.png`.
+- Hit/death feedback evidence: `game/.playwright-cli/page-2026-06-20T03-48-54-682Z.png`.
+- Combined comparison evidence: `C:/Users/Yoru17/AppData/Local/Temp/v4-3-comparison.png`.
+- Viewport/state: `390 × 844`, active portrait gameplay after the first gate.
+
+### Findings and patches
+
+- [Fixed P1] Per-instance feedback tinting could render as black silhouettes on the current WebGL path. Feedback now uses separate fixed-color instanced layers: gold for upgrades, white for hits and grey for death. Layer scale follows smooth attack/hold/release curves.
+- [Fixed P1] The crowd was visibly boxed by hard X/Z clamps. Those clamps were removed. Living units keep Y at ground height while spring attraction and five-pass circle collisions form an organic cluster.
+- [Fixed P1] Units still intersected under pressure. The collision radius increased and five solver passes maintain a measured minimum center distance of approximately `0.40`.
+- [Fixed P2] Death knockback was too subtle. Player victims now travel more than `3.3` local Z units in the regression sample, and enemy deaths launch backward with stronger vertical and rotational impulses for up to `1.8` seconds.
+- [Fixed P1] The opaque ocean plane created a hard lower-frame seam against the panorama. It was removed, allowing the generated cloud-sea image to continue naturally beneath the suspended road.
+- [Fixed P2] Side islands recycled as a synchronized group. Eleven islands now wrap independently over a `154`-unit loop; the loop regression recorded at most one island wrapping on any distance step.
+- [Fixed P2] Pausing allowed feedback and corpse simulation to continue, making visual inspection inconsistent. Army and enemy render simulations now freeze while paused.
+
+### Verification
+
+- Upgrade capture shows the complete formation in the gold upgrade state without black artifacts.
+- Combat capture shows white hit silhouettes transitioning into persistent grey bodies while exact victims are physically launched.
+- The crowd simulation has no rectangular boundary; the 80-unit sample naturally occupied approximately X `-2.04..1.96`, Z `1.17..4.81`, with Y fixed at `0`.
+- The cloud panorama now fills the lower background without the previous flat turquoise cut.
+- Active development sample remained at approximately `120 FPS`.
+- Production build passed and the complete production run reached victory with `252` survivors, combo `×9`, and zero browser runtime errors.
+
+### Follow-up polish
+
+- P3: replace the procedural islands with authored environment models that match the panorama's architectural detail.
+- P3: external animated soldier models will make the white-to-grey death transition more legible through authored hit and ragdoll poses.
+
+final result: passed
+
+## v4.4 shader feedback, gate pacing, Boss AoE and 4K sky verification
+
+- Source visual truth: `C:/Users/Yoru17/AppData/Local/Temp/codex-clipboard-056adeb5-4625-4ab4-af6a-336bbb1b72d4.png`.
+- Implementation screenshot: `game/.playwright-cli/page-2026-06-20T06-09-31-685Z.png`.
+- Gate-state screenshot: `game/.playwright-cli/page-2026-06-20T06-04-00-192Z.png`.
+- Full-view comparison evidence: `C:/Users/Yoru17/AppData/Local/Temp/v4-4-comparison.png`.
+- Viewport/state: `1280 x 720` desktop capture of the portrait game surface, active gate-combat state.
+- Focused region evidence: gate-state capture and debug samples from `window.__SKYLINE_DEBUG__`; no additional crop was needed because the gate, projectile stream, aircraft, crowd and sky are visible in the full-frame capture.
+
+### Findings and patches
+
+- [Fixed P1] Hit/upgrade/death feedback still read as one-frame switching. Player and enemy instanced meshes now use per-instance shader attributes for `feedbackColor`, `feedbackAmount` and `greyAmount`, so visible materials lerp from original color to white/yellow and then to grey over time.
+- [Fixed P1] HMR/fast reload could race the feedback attributes on the first frame. Instanced feedback attributes are now initialized in layout effects and guarded before writes; the browser verification run reported zero runtime errors after the fix.
+- [Fixed P1] Boss projectile damage was single-target and low-threat. Boss projectiles now telegraph a red impact radius, detonate on the target zone and kill the actual units inside the radius, capped by boss health phase.
+- [Fixed P1] Gate values rose too quickly because every troop volley could charge the gate. Gate combat now uses fewer charge bolts, a slower gate-phase fire cadence, per-region `shotsPerPoint`, and later gates begin more negative while opening their charge window earlier.
+- [Fixed P2] The sky was blurry/dark or visibly cut by a lower seam. A new generated azure panorama was added as `azure-sky-panorama-v2-4k.jpg` plus a 2K compact fallback; background/environment intensity was tuned to avoid overexposure.
+- [Fixed P2] The aircraft/cannon blended into the pale floor. The craft shell and wings now use darker navy/gunmetal surfaces with a gold-emissive cannon muzzle so the weapon silhouette remains readable.
+
+### Required fidelity surfaces
+
+- Fonts and typography: existing HUD and gate display remain legible; no new copy or font mismatch was introduced.
+- Spacing and layout rhythm: aircraft, soldier cluster and gate corridor remain separated; the cannon line is visually readable and not fully covered by the cluster in the gate-state capture.
+- Colors and visual tokens: projectile/impact charge color remains unified gold, gate semantics remain red/blue, Boss attacks use red danger telegraphing, and death state resolves to grey.
+- Image quality and asset fidelity: the new sky better matches the reference's bright floating-island sci-fi backdrop, though procedural soldiers/Boss still remain intentionally lower-fidelity placeholders until external GLB/FBX-derived assets are introduced.
+- Copy and content: gate values, troop count, combo, Boss name/health and result states remain coherent.
+
+### Verification
+
+- Production build: passed.
+- Browser run: zero runtime errors after the feedback-attribute race fix; remaining logs are Three.js deprecation/shader precision warnings and occasional context-lost messages during repeated Playwright page reloads.
+- Normal-speed gate debug sample: first gate resolved at moderate values (`leftValue: 7`, `rightValue: 15`) instead of maxing both sides, confirming the new gate charging throttle.
+- Feedback debug sample: dying units showed intermediate material states (`hitIntensity: 0.774`, `greyAmount: 0.226`, sample color `cfdfe7`), confirming smooth white-to-grey interpolation rather than a hard switch.
+- Boss isolation capture: boss phase displayed red attack telegraphs and the projectile pool completed without runtime errors.
+
+### Follow-up polish
+
+- P3: Boss model and authored attack animations should be replaced with external assets for a more premium “weapon system” read.
+- P3: authored soldier models/animations will make upgrade glow, death grey-out and knockback much more legible than procedural capsule/sphere figures.
+- P3: bundle splitting remains useful later because the Three.js chunk is still above Vite's default warning threshold.
+
 final result: passed

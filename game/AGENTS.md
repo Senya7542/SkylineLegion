@@ -28,13 +28,14 @@ When implementing from a selected generated mock, treat that image as the source
 - Troops form a bounded elastic cluster around the aircraft instead of a rigid grid. New troops spawn at the cluster center and physically push nearby troops outward.
 - Player and enemy soldiers should read at a comparable visual scale; elite enemies may be larger later.
 - Enemy waves remain untargetable and passive until the gate for their region has resolved. Each region needs enough gate-to-wave distance and enemy mass to build pressure.
-- Use an independent unlit overlay for unmistakable full-target white hit flashes and gold upgrade flashes.
+- Use fixed-color instanced feedback layers for unmistakable white hit flashes, gold upgrades and grey deaths. Do not drive feedback color through per-instance tinting; it produced black silhouettes on the current Three.js/WebGL path.
 - Normal bullets, heavy cannon rounds, muzzle flashes, impact sparks and rings share one white-core/gold-glow visual language.
 - Firing and impact sounds must be driven by real combat events and rate-limited when many projectiles land together.
 - Gameplay state, collision bodies and animation state must stay independent from render models so procedural visuals can later be replaced by GLB/FBX-derived adapters.
-- Player clustering uses immediate center spawning, multi-pass circle collision constraints, aircraft exclusion and bounded X/Z motion; avoid delayed batches or fixed formation slots.
+- Player clustering uses immediate center spawning, multi-pass circle collision constraints and aircraft exclusion; do not hard-clamp the crowd into a rectangular X/Z box. In this project Y is height, matching the user's UE-style coordinate terminology.
 - Unit hit/upgrade/death colors transition smoothly. Death progresses from white hit flash to persistent grey before disappearance.
 - Enemy-player contact kills only the actual colliding pair and applies directional 3D impulse, gravity and spin to both.
 - Projectiles are born with a region/phase lock and may not interact with future gates or waves. Use a non-interactive travel phase between regions.
 - Boss damage must come from visible moving attacks: aimed dodgeable projectiles and a proximity shockwave. The Boss advances and heavy cannon hits may push it back slightly.
 - Preserve the generated Azure Utopia panorama, environment reflections and performance-budgeted dynamic shadows unless a later visual direction replaces them.
+- Do not place an opaque ocean plane across the lower camera view; it creates a hard seam against the panorama. Side islands recycle independently over a long loop so multiple landmarks never visibly snap back together.

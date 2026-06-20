@@ -1,7 +1,7 @@
 import { clamp, MAX_VISIBLE_TROOPS } from "./gameConfig.js";
 
 const PLAYER_CENTER_Z = 3.05;
-const PLAYER_RADIUS = 0.18;
+const PLAYER_RADIUS = 0.205;
 const AIRCRAFT_X_RADIUS = 0.56;
 const AIRCRAFT_Z_MIN = 3.18;
 const AIRCRAFT_Z_MAX = 4.28;
@@ -45,7 +45,7 @@ function pushOutOfAircraft(unit) {
 }
 
 function solvePairCollisions(units, time) {
-  for (let iteration = 0; iteration < 3; iteration += 1) {
+  for (let iteration = 0; iteration < 5; iteration += 1) {
     for (let index = 0; index < units.length; index += 1) {
       const unit = units[index];
       if (!unit.active || unit.dying || time < unit.spawnAt) continue;
@@ -89,15 +89,12 @@ function solvePairCollisions(units, time) {
       }
 
       pushOutOfAircraft(unit);
-      unit.x = clamp(unit.x, -1.54, 1.54);
-      unit.z = clamp(unit.z, 1.48, 4.15);
     }
   }
   units.forEach((unit) => {
     if (!unit.active || unit.dying) return;
     pushOutOfAircraft(unit);
-    unit.x = clamp(unit.x, -1.54, 1.54);
-    unit.z = clamp(unit.z, 1.48, 4.15);
+    unit.y = 0;
   });
 }
 
@@ -132,7 +129,7 @@ export function updateArmyUnits(units, count, time, delta) {
   units.forEach((unit) => {
     if (unit.dying) {
       const age = time - unit.deathAt;
-      if (age > 0.9) {
+      if (age > 1.8) {
         unit.dying = false;
         unit.active = false;
         unit.scale = 0;
@@ -143,7 +140,8 @@ export function updateArmyUnits(units, count, time, delta) {
       unit.y += unit.vy * delta;
       unit.z += unit.vz * delta;
       unit.rotation += unit.spin * delta;
-      unit.scale = Math.max(0.04, 1 - age / 0.9);
+      unit.scale =
+        age < 1.02 ? 1 : Math.max(0.04, 1 - (age - 1.02) / 0.78);
       return;
     }
 
@@ -157,12 +155,13 @@ export function updateArmyUnits(units, count, time, delta) {
     const centerZ = PLAYER_CENTER_Z - crowdScale * 0.08;
     const dx = centerX - unit.x;
     const dz = centerZ - unit.z;
-    unit.vx += dx * 5.2 * delta;
-    unit.vz += dz * 4.5 * delta;
-    unit.vx *= Math.exp(-4.6 * delta);
-    unit.vz *= Math.exp(-4.6 * delta);
+    unit.vx += dx * 3.7 * delta;
+    unit.vz += dz * 3.3 * delta;
+    unit.vx *= Math.exp(-3.8 * delta);
+    unit.vz *= Math.exp(-3.8 * delta);
     unit.x += unit.vx * delta;
     unit.z += unit.vz * delta;
+    unit.y = 0;
   });
 
   solvePairCollisions(activeUnits, time);
@@ -170,8 +169,8 @@ export function updateArmyUnits(units, count, time, delta) {
     const centerX =
       activeUnits.reduce((sum, unit) => sum + unit.x, 0) / activeUnits.length;
     activeUnits.forEach((unit) => {
-      unit.vx -= centerX * 0.8;
-      unit.x = clamp(unit.x - centerX * 0.035, -1.54, 1.54);
+      unit.vx -= centerX * 0.42;
+      unit.x -= centerX * 0.016;
     });
   }
 }
@@ -181,10 +180,10 @@ export function killArmyUnit(unit, time, impulseX = 0, impulseZ = 0.8) {
   unit.dying = true;
   unit.deathAt = time;
   unit.hitAt = time;
-  unit.vx = impulseX || (unit.x >= 0 ? 1 : -1) * 1.1;
-  unit.vy = 2.4 + Math.min(1.2, Math.abs(impulseZ) * 0.35);
-  unit.vz = impulseZ;
-  unit.spin = (unit.x >= 0 ? -1 : 1) * (6 + Math.abs(impulseX) * 2);
+  unit.vx = (impulseX || (unit.x >= 0 ? 1 : -1) * 1.1) * 1.45;
+  unit.vy = 3.4 + Math.min(1.6, Math.abs(impulseZ) * 0.4);
+  unit.vz = impulseZ * 2.15;
+  unit.spin = (unit.x >= 0 ? -1 : 1) * (8 + Math.abs(impulseX) * 2.6);
   return true;
 }
 

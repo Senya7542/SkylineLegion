@@ -12,6 +12,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -54,9 +55,89 @@ const DEBUG_NO_PHYSICS = DEBUG_FLAGS.has("noPhysics");
 const DEBUG_SLOW = DEBUG_FLAGS.has("slow");
 const DEBUG_NO_ADVANCE = DEBUG_FLAGS.has("noAdvance");
 const DEBUG_STOP_AT = Number(DEBUG_FLAGS.get("stopAt")) || null;
+const DEBUG_START_AT = Number(DEBUG_FLAGS.get("startAt")) || 0;
 const DEBUG_BOSS_TEST = DEBUG_FLAGS.has("bossTest");
 const DEBUG_ENEMY_RUSH = DEBUG_FLAGS.has("enemyRush");
 const MAX_BOSS_PROJECTILES = 36;
+const FEEDBACK_COLOR_ATTRIBUTE = "instanceFeedback";
+const FEEDBACK_GREY_ATTRIBUTE = "instanceGrey";
+
+function setupFeedbackAttributes(mesh, count) {
+  if (!mesh?.geometry) return;
+  const feedback = new THREE.InstancedBufferAttribute(
+    new Float32Array(count * 4),
+    4,
+  );
+  const grey = new THREE.InstancedBufferAttribute(new Float32Array(count), 1);
+  feedback.setUsage(THREE.DynamicDrawUsage);
+  grey.setUsage(THREE.DynamicDrawUsage);
+  mesh.geometry.setAttribute(FEEDBACK_COLOR_ATTRIBUTE, feedback);
+  mesh.geometry.setAttribute(FEEDBACK_GREY_ATTRIBUTE, grey);
+}
+
+function setFeedback(mesh, index, color, amount, greyAmount) {
+  const feedback = mesh.geometry.getAttribute(FEEDBACK_COLOR_ATTRIBUTE);
+  const grey = mesh.geometry.getAttribute(FEEDBACK_GREY_ATTRIBUTE);
+  if (!feedback || !grey) return;
+  feedback.setXYZW(index, color.r, color.g, color.b, amount);
+  grey.setX(index, greyAmount);
+}
+
+function markFeedbackForUpdate(mesh) {
+  const feedback = mesh.geometry.getAttribute(FEEDBACK_COLOR_ATTRIBUTE);
+  const grey = mesh.geometry.getAttribute(FEEDBACK_GREY_ATTRIBUTE);
+  if (feedback) feedback.needsUpdate = true;
+  if (grey) grey.needsUpdate = true;
+}
+
+function FeedbackMaterial({ greyColor, cacheKey, ...props }) {
+  const patchShader = useMemo(() => {
+    const grey = new THREE.Color(greyColor);
+    return (shader) => {
+      shader.vertexShader = `
+        attribute vec4 ${FEEDBACK_COLOR_ATTRIBUTE};
+        attribute float ${FEEDBACK_GREY_ATTRIBUTE};
+        varying vec4 vInstanceFeedback;
+        varying float vInstanceGrey;
+      ${shader.vertexShader}`.replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+        vInstanceFeedback = ${FEEDBACK_COLOR_ATTRIBUTE};
+        vInstanceGrey = ${FEEDBACK_GREY_ATTRIBUTE};`,
+      );
+      shader.fragmentShader = `
+        varying vec4 vInstanceFeedback;
+        varying float vInstanceGrey;
+      ${shader.fragmentShader}`.replace(
+        "#include <dithering_fragment>",
+        `
+        gl_FragColor.rgb = mix(
+          gl_FragColor.rgb,
+          vInstanceFeedback.rgb,
+          smoothstep(0.0, 1.0, vInstanceFeedback.a)
+        );
+        gl_FragColor.rgb = mix(
+          gl_FragColor.rgb,
+          vec3(${grey.r.toFixed(5)}, ${grey.g.toFixed(5)}, ${grey.b.toFixed(5)}),
+          smoothstep(0.0, 1.0, vInstanceGrey)
+        );
+        #include <dithering_fragment>`,
+      );
+    };
+  }, [greyColor]);
+  const programKey = useCallback(
+    () => `instanced-feedback-${cacheKey}-${greyColor}`,
+    [cacheKey, greyColor],
+  );
+
+  return (
+    <meshStandardMaterial
+      {...props}
+      onBeforeCompile={patchShader}
+      customProgramCacheKey={programKey}
+    />
+  );
+}
 
 function Hovercraft({ active, rapidRef, playerXRef, cannonPulseRef }) {
   const ref = useRef();
@@ -96,9 +177,11 @@ function Hovercraft({ active, rapidRef, playerXRef, cannonPulseRef }) {
       <mesh rotation={[0, Math.PI / 4, 0]} castShadow>
         <octahedronGeometry args={[0.78, 0]} />
         <meshStandardMaterial
-          color="#e7fdff"
-          metalness={0.7}
-          roughness={0.22}
+          color="#17384f"
+          emissive="#061b2c"
+          emissiveIntensity={0.35}
+          metalness={0.82}
+          roughness={0.18}
         />
       </mesh>
       <mesh
@@ -123,10 +206,19 @@ function Hovercraft({ active, rapidRef, playerXRef, cannonPulseRef }) {
         <cylinderGeometry args={[0.11, 0.15, 1.42, 12]} />
         <meshStandardMaterial
           ref={cannonMaterial}
-          color="#eaffff"
-          emissive="#ffd84d"
-          emissiveIntensity={0.8}
+          color="#203346"
+          emissive="#ffb72d"
+          emissiveIntensity={1.2}
+          metalness={0.9}
+          roughness={0.2}
         />
+      </mesh>
+      <mesh
+        position={[0, 0.34, -1.61]}
+        rotation={[Math.PI / 2, 0, 0]}
+      >
+        <torusGeometry args={[0.115, 0.032, 8, 20]} />
+        <meshBasicMaterial color="#ffd23f" toneMapped={false} />
       </mesh>
       {[-1, 1].map((side, sideIndex) => (
         <group
@@ -137,9 +229,9 @@ function Hovercraft({ active, rapidRef, playerXRef, cannonPulseRef }) {
           <mesh rotation={[0, 0, side * 0.08]} castShadow>
             <boxGeometry args={[0.78, 0.11, 1.16]} />
             <meshStandardMaterial
-              color="#dffaff"
+              color="#254c67"
               emissive="#0b83bd"
-              emissiveIntensity={0.55}
+              emissiveIntensity={0.72}
               metalness={0.82}
               roughness={0.18}
             />
@@ -169,32 +261,32 @@ function Hovercraft({ active, rapidRef, playerXRef, cannonPulseRef }) {
   );
 }
 
-function Army({ troopsRef, unitsRef, upgradePulseRef }) {
+function Army({ troopsRef, unitsRef, upgradePulseRef, active }) {
   const bodies = useRef();
   const heads = useRef();
   const guns = useRef();
-  const flashBodies = useRef();
-  const flashHeads = useRef();
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);
-  const flashColor = useMemo(() => new THREE.Color(), []);
+  const feedbackColor = useMemo(() => new THREE.Color(), []);
+  const playerBodyBase = useMemo(() => new THREE.Color("#37d4ff"), []);
+  const playerBodyGrey = useMemo(() => new THREE.Color("#555c61"), []);
   const previousCount = useRef(0);
 
-  useEffect(() => {
-    [bodies, heads, guns, flashBodies, flashHeads].forEach((ref) => {
+  useLayoutEffect(() => {
+    [bodies, heads, guns].forEach((ref) => {
       if (ref.current) {
         ref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        setupFeedbackAttributes(ref.current, MAX_VISIBLE_TROOPS);
       }
     });
   }, []);
 
   useFrame((state, delta) => {
+    if (!active) return;
     if (
       !bodies.current ||
       !heads.current ||
-      !guns.current ||
-      !flashBodies.current ||
-      !flashHeads.current
+      !guns.current
     ) return;
     const time = state.clock.elapsedTime;
     const count = Math.min(troopsRef.current, MAX_VISIBLE_TROOPS);
@@ -204,8 +296,10 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
       pulse.at = time;
       pulse.from = previousCount.current;
       pulse.to = count;
-      unitsRef.current.forEach((unit, index) => {
-        if (index < previousCount.current) unit.glowAt = time;
+      unitsRef.current.forEach((unit) => {
+        if (unit.active && !unit.dying && time - unit.spawnAt > 0.08) {
+          unit.glowAt = time;
+        }
       });
     }
     previousCount.current = count;
@@ -218,62 +312,74 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
         bodies.current.setMatrixAt(index, dummy.matrix);
         heads.current.setMatrixAt(index, dummy.matrix);
         guns.current.setMatrixAt(index, dummy.matrix);
-        flashBodies.current.setMatrixAt(index, dummy.matrix);
-        flashHeads.current.setMatrixAt(index, dummy.matrix);
+        feedbackColor.set("#ffffff");
+        [bodies.current, heads.current, guns.current].forEach((mesh) =>
+          setFeedback(mesh, index, feedbackColor, 0, 0),
+        );
         return;
       }
       const step = Math.abs(Math.sin(time * 8 + index * 0.7)) * 0.045;
       const scale = unit.scale * ENTITY_VISUALS.playerSoldier.scale;
       const glowAge = time - unit.glowAt;
       const glowIntensity =
-        glowAge >= 0 && glowAge < 0.62
-          ? Math.sin((glowAge / 0.62) * Math.PI)
-          : 0;
+        glowAge < 0 || glowAge >= 1.8
+          ? 0
+          : glowAge < 0.18
+            ? THREE.MathUtils.smoothstep(glowAge, 0, 0.18)
+            : glowAge < 0.95
+              ? 1
+              : 1 - THREE.MathUtils.smoothstep(glowAge, 0.95, 1.8);
       const hitAge = time - unit.hitAt;
       const hitIntensity =
-        hitAge >= 0 && hitAge < 0.2
-          ? Math.sin((hitAge / 0.2) * Math.PI)
-          : 0;
+        hitAge < 0 || hitAge >= 0.66
+          ? 0
+          : hitAge < 0.07
+            ? THREE.MathUtils.smoothstep(hitAge, 0, 0.07)
+            : hitAge < 0.2
+              ? 1
+              : 1 - THREE.MathUtils.smoothstep(hitAge, 0.2, 0.66);
       const deathAge = unit.dying ? time - unit.deathAt : -1;
       const greyAmount = unit.dying
-        ? THREE.MathUtils.smoothstep(deathAge, 0.1, 0.32)
+        ? THREE.MathUtils.smoothstep(deathAge, 0.2, 0.66)
         : 0;
       const overlayIntensity = Math.max(glowIntensity, hitIntensity);
       const overlayColor =
         hitIntensity >= glowIntensity ? "#ffffff" : "#ffd83f";
+      feedbackColor.set(overlayColor);
 
       dummy.position.set(unit.x, 0.58 + step + unit.y, unit.z);
       dummy.rotation.set(unit.rotation * 0.45, 0, unit.rotation);
       dummy.scale.set(scale, scale, scale);
       dummy.updateMatrix();
       bodies.current.setMatrixAt(index, dummy.matrix);
-      bodies.current.setColorAt(
+      setFeedback(
+        bodies.current,
         index,
-        color.set("#37d4ff").lerp(new THREE.Color("#747b80"), greyAmount),
+        feedbackColor,
+        overlayIntensity,
+        greyAmount,
       );
-      dummy.scale.multiplyScalar(1.06);
-      dummy.updateMatrix();
-      flashBodies.current.setMatrixAt(index, dummy.matrix);
-      flashBodies.current.setColorAt(
-        index,
-        flashColor.set(overlayColor).multiplyScalar(overlayIntensity),
-      );
-
+      if (import.meta.env.DEV) {
+        unit.debugBodyColor = color
+          .copy(playerBodyBase)
+          .lerp(feedbackColor, overlayIntensity)
+          .lerp(playerBodyGrey, greyAmount)
+          .getHexString();
+        unit.debugGlowIntensity = glowIntensity;
+        unit.debugHitIntensity = hitIntensity;
+        unit.debugGreyAmount = greyAmount;
+      }
       dummy.position.set(unit.x, 0.84 + step + unit.y, unit.z);
       dummy.rotation.set(unit.rotation * 0.45, 0, unit.rotation);
       dummy.scale.setScalar(scale);
       dummy.updateMatrix();
       heads.current.setMatrixAt(index, dummy.matrix);
-      heads.current.setColorAt(
+      setFeedback(
+        heads.current,
         index,
-        color.set("#f7ffff").lerp(new THREE.Color("#8c9194"), greyAmount),
-      );
-      dummy.scale.multiplyScalar(1.08);
-      dummy.updateMatrix();
-      flashHeads.current.setMatrixAt(index, dummy.matrix);
-      flashHeads.current.setColorAt(
-        index,
-        flashColor.set(overlayColor).multiplyScalar(overlayIntensity),
+        feedbackColor,
+        overlayIntensity,
+        greyAmount,
       );
 
       dummy.position.set(unit.x + 0.08, 0.65 + step + unit.y, unit.z - 0.08);
@@ -281,72 +387,53 @@ function Army({ troopsRef, unitsRef, upgradePulseRef }) {
       dummy.scale.setScalar(scale);
       dummy.updateMatrix();
       guns.current.setMatrixAt(index, dummy.matrix);
-      guns.current.setColorAt(index, color.set("#f1ffff"));
+      setFeedback(
+        guns.current,
+        index,
+        feedbackColor,
+        overlayIntensity,
+        greyAmount,
+      );
     });
     bodies.current.instanceMatrix.needsUpdate = true;
     heads.current.instanceMatrix.needsUpdate = true;
     guns.current.instanceMatrix.needsUpdate = true;
-    flashBodies.current.instanceMatrix.needsUpdate = true;
-    flashHeads.current.instanceMatrix.needsUpdate = true;
-    if (bodies.current.instanceColor) bodies.current.instanceColor.needsUpdate = true;
-    if (heads.current.instanceColor) heads.current.instanceColor.needsUpdate = true;
-    if (guns.current.instanceColor) guns.current.instanceColor.needsUpdate = true;
-    if (flashBodies.current.instanceColor) {
-      flashBodies.current.instanceColor.needsUpdate = true;
-    }
-    if (flashHeads.current.instanceColor) {
-      flashHeads.current.instanceColor.needsUpdate = true;
-    }
+    markFeedbackForUpdate(bodies.current);
+    markFeedbackForUpdate(heads.current);
+    markFeedbackForUpdate(guns.current);
   });
 
   return (
     <group>
       <instancedMesh ref={bodies} args={[null, null, MAX_VISIBLE_TROOPS]} castShadow>
         <capsuleGeometry args={[0.105, 0.25, 3, 7]} />
-        <meshStandardMaterial
+        <FeedbackMaterial
+          greyColor="#555c61"
+          cacheKey="army-body"
           color="#37d4ff"
-          vertexColors
           emissive="#079ed3"
-          emissiveIntensity={0.62}
+          emissiveIntensity={0.38}
           metalness={0.4}
           roughness={0.3}
         />
       </instancedMesh>
       <instancedMesh ref={heads} args={[null, null, MAX_VISIBLE_TROOPS]} castShadow>
         <sphereGeometry args={[0.14, 8, 8]} />
-        <meshStandardMaterial
-          color="#eaffff"
-          vertexColors
+        <FeedbackMaterial
+          greyColor="#777c80"
+          cacheKey="army-head"
+          color="#f7ffff"
           emissive="#38cfff"
-          emissiveIntensity={0.48}
+          emissiveIntensity={0.28}
         />
       </instancedMesh>
       <instancedMesh ref={guns} args={[null, null, MAX_VISIBLE_TROOPS]}>
         <cylinderGeometry args={[0.026, 0.034, 0.34, 6]} />
-        <meshStandardMaterial color="#f1ffff" vertexColors metalness={0.8} />
-      </instancedMesh>
-      <instancedMesh ref={flashBodies} args={[null, null, MAX_VISIBLE_TROOPS]}>
-        <capsuleGeometry args={[0.105, 0.25, 3, 7]} />
-        <meshBasicMaterial
-          color="#ffffff"
-          vertexColors
-          toneMapped={false}
-          transparent
-          opacity={1}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </instancedMesh>
-      <instancedMesh ref={flashHeads} args={[null, null, MAX_VISIBLE_TROOPS]}>
-        <sphereGeometry args={[0.14, 8, 8]} />
-        <meshBasicMaterial
-          color="#ffffff"
-          vertexColors
-          toneMapped={false}
-          transparent
-          opacity={1}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
+        <FeedbackMaterial
+          greyColor="#646a6e"
+          cacheKey="army-gun"
+          color="#f1ffff"
+          metalness={0.8}
         />
       </instancedMesh>
     </group>
@@ -464,6 +551,7 @@ function PlayerRig({
         troopsRef={troopsRef}
         unitsRef={unitsRef}
         upgradePulseRef={upgradePulseRef}
+        active={active}
       />
       <DroneWing dronesRef={dronesRef} />
       <UpgradeBurst pulseRef={upgradePulseRef} />
@@ -481,7 +569,7 @@ function ProjectilePool({ bulletsRef }) {
   const glow = useRef();
   const core = useRef();
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     [glow, core].forEach((ref) => {
       if (ref.current) ref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     });
@@ -534,7 +622,7 @@ function BossProjectilePool({ projectilesRef }) {
   const glow = useRef();
   const core = useRef();
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     [glow, core].forEach((ref) => {
       if (ref.current) ref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     });
@@ -574,6 +662,64 @@ function BossProjectilePool({ projectilesRef }) {
       <instancedMesh ref={core} args={[null, null, MAX_BOSS_PROJECTILES]}>
         <sphereGeometry args={[0.11, 7, 7]} />
         <meshBasicMaterial color="#fff0b0" toneMapped={false} />
+      </instancedMesh>
+    </group>
+  );
+}
+
+function BossTargetTelegraphs({ projectilesRef }) {
+  const rings = useRef();
+  const fills = useRef();
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  useEffect(() => {
+    [rings, fills].forEach((ref) => {
+      if (ref.current) ref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    });
+  }, []);
+  useFrame((state) => {
+    if (!rings.current || !fills.current) return;
+    projectilesRef.current.forEach((projectile, index) => {
+      if (!projectile.active) {
+        dummy.scale.setScalar(0);
+      } else {
+        const warningAge = state.clock.elapsedTime - projectile.spawnedAt;
+        const pulse = 1 + Math.sin(warningAge * 14) * 0.09;
+        dummy.position.set(projectile.targetX, 0.13, projectile.targetZ);
+        dummy.rotation.set(Math.PI / 2, 0, 0);
+        dummy.scale.setScalar(projectile.radius * pulse);
+      }
+      dummy.updateMatrix();
+      rings.current.setMatrixAt(index, dummy.matrix);
+      if (projectile.active) dummy.scale.multiplyScalar(0.82);
+      dummy.updateMatrix();
+      fills.current.setMatrixAt(index, dummy.matrix);
+    });
+    rings.current.instanceMatrix.needsUpdate = true;
+    fills.current.instanceMatrix.needsUpdate = true;
+  });
+  return (
+    <group>
+      <instancedMesh ref={rings} args={[null, null, MAX_BOSS_PROJECTILES]}>
+        <torusGeometry args={[1, 0.055, 8, 48]} />
+        <meshBasicMaterial
+          color="#ff3d1f"
+          transparent
+          opacity={0.92}
+          toneMapped={false}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </instancedMesh>
+      <instancedMesh ref={fills} args={[null, null, MAX_BOSS_PROJECTILES]}>
+        <circleGeometry args={[1, 48]} />
+        <meshBasicMaterial
+          color="#ff5b2d"
+          transparent
+          opacity={0.18}
+          toneMapped={false}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
       </instancedMesh>
     </group>
   );
@@ -883,32 +1029,29 @@ function GatePair({ gate, distanceRef, playerXRef, stateRef }) {
   );
 }
 
-function EnemyWave({ wave, enemies, waveState, distanceRef }) {
+function EnemyWave({ wave, enemies, waveState, distanceRef, active }) {
   const bodies = useRef();
   const heads = useRef();
   const legs = useRef();
-  const flashBodies = useRef();
-  const flashHeads = useRef();
   const alertRing = useRef();
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const bodyColor = useMemo(() => new THREE.Color(), []);
-  const flashColor = useMemo(() => new THREE.Color(), []);
+  const flashColor = useMemo(() => new THREE.Color("#ffffff"), []);
 
-  useEffect(() => {
-    [bodies, heads, legs, flashBodies, flashHeads].forEach((ref) => {
+  useLayoutEffect(() => {
+    [bodies, heads, legs].forEach((ref) => {
       if (ref.current) {
         ref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        setupFeedbackAttributes(ref.current, enemies.length);
       }
     });
-  }, []);
+  }, [enemies.length]);
 
   useFrame((state) => {
+    if (!active) return;
     if (
       !bodies.current ||
       !heads.current ||
-      !legs.current ||
-      !flashBodies.current ||
-      !flashHeads.current
+      !legs.current
     ) return;
     const t = state.clock.elapsedTime;
     if (alertRing.current) {
@@ -943,29 +1086,40 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
         rotationY = Math.sin(t * 2 + enemy.id) * 0.14;
         const hitAge = t - enemy.hitAt;
         hit =
-          hitAge >= 0 && hitAge < 0.22
-            ? Math.sin((hitAge / 0.22) * Math.PI)
-            : 0;
+          hitAge < 0 || hitAge >= 0.66
+            ? 0
+            : hitAge < 0.07
+              ? THREE.MathUtils.smoothstep(hitAge, 0, 0.07)
+              : hitAge < 0.2
+                ? 1
+                : 1 - THREE.MathUtils.smoothstep(hitAge, 0.2, 0.66);
         scaleX = 1 + hit * 0.24;
         scaleY = 1 - hit * 0.28;
         scaleZ = 1 + hit * 0.24;
       } else {
         const age = t - enemy.deathAt;
-        visible = age >= 0 && age <= 0.9;
+        visible = age >= 0 && age <= 1.8;
         if (visible) {
-          const flightAge = Math.max(0, age - 0.11);
+          const flightAge = Math.max(0, age - 0.14);
           hit =
-            age >= 0 && age < 0.16
-              ? Math.sin((age / 0.16) * Math.PI)
-              : 0;
-          greyAmount = THREE.MathUtils.smoothstep(age, 0.1, 0.3);
+            age < 0 || age >= 0.66
+              ? 0
+              : age < 0.07
+                ? THREE.MathUtils.smoothstep(age, 0, 0.07)
+                : age < 0.2
+                  ? 1
+                  : 1 - THREE.MathUtils.smoothstep(age, 0.2, 0.66);
+          greyAmount = THREE.MathUtils.smoothstep(age, 0.22, 0.68);
           x += enemy.vx * flightAge;
           y += enemy.vy * flightAge - 4.6 * flightAge * flightAge;
           z += enemy.vz * flightAge;
           rotationX = flightAge * enemy.spinX;
           rotationY = flightAge * enemy.spinY;
           rotationZ = flightAge * enemy.spinZ;
-          const deathScale = age < 0.11 ? 1 + age * 2.2 : 1 - flightAge / 0.82;
+          const deathScale =
+            age < 0.2
+              ? 1 + Math.sin((age / 0.2) * Math.PI) * 0.22
+              : 1 - flightAge / 1.62;
           scaleX = scaleY = scaleZ = Math.max(0.05, deathScale);
         }
       }
@@ -976,8 +1130,9 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
         bodies.current.setMatrixAt(index, dummy.matrix);
         heads.current.setMatrixAt(index, dummy.matrix);
         legs.current.setMatrixAt(index, dummy.matrix);
-        flashBodies.current.setMatrixAt(index, dummy.matrix);
-        flashHeads.current.setMatrixAt(index, dummy.matrix);
+        [bodies.current, heads.current, legs.current].forEach((mesh) =>
+          setFeedback(mesh, index, flashColor, 0, 0),
+        );
         return;
       }
 
@@ -986,54 +1141,26 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
       dummy.scale.set(scaleX, scaleY, scaleZ);
       dummy.updateMatrix();
       bodies.current.setMatrixAt(index, dummy.matrix);
-      bodyColor.set("#e54f32").lerp(new THREE.Color("#696b6c"), greyAmount);
-      bodies.current.setColorAt(index, bodyColor);
-      dummy.scale.multiplyScalar(1.08);
-      dummy.updateMatrix();
-      flashBodies.current.setMatrixAt(index, dummy.matrix);
-      flashBodies.current.setColorAt(
-        index,
-        flashColor.set("#ffffff").multiplyScalar(hit),
-      );
+      setFeedback(bodies.current, index, flashColor, hit, greyAmount);
 
       dummy.position.set(x, y + 0.3 * scaleY, z);
       dummy.scale.setScalar(0.95 * scaleX);
       dummy.updateMatrix();
       heads.current.setMatrixAt(index, dummy.matrix);
-      heads.current.setColorAt(
-        index,
-        bodyColor.set("#ffbc83").lerp(new THREE.Color("#858585"), greyAmount),
-      );
-      dummy.scale.multiplyScalar(1.1);
-      dummy.updateMatrix();
-      flashHeads.current.setMatrixAt(index, dummy.matrix);
-      flashHeads.current.setColorAt(
-        index,
-        flashColor.set("#ffffff").multiplyScalar(hit),
-      );
+      setFeedback(heads.current, index, flashColor, hit, greyAmount);
 
       dummy.position.set(x, y - 0.12 * scaleY, z);
       dummy.scale.set(scaleX, scaleY, scaleZ);
       dummy.updateMatrix();
       legs.current.setMatrixAt(index, dummy.matrix);
-      legs.current.setColorAt(index, bodyColor.set("#51222c"));
+      setFeedback(legs.current, index, flashColor, hit, greyAmount);
     });
     bodies.current.instanceMatrix.needsUpdate = true;
     heads.current.instanceMatrix.needsUpdate = true;
     legs.current.instanceMatrix.needsUpdate = true;
-    flashBodies.current.instanceMatrix.needsUpdate = true;
-    flashHeads.current.instanceMatrix.needsUpdate = true;
-    if (bodies.current.instanceColor) {
-      bodies.current.instanceColor.needsUpdate = true;
-    }
-    if (heads.current.instanceColor) heads.current.instanceColor.needsUpdate = true;
-    if (legs.current.instanceColor) legs.current.instanceColor.needsUpdate = true;
-    if (flashBodies.current.instanceColor) {
-      flashBodies.current.instanceColor.needsUpdate = true;
-    }
-    if (flashHeads.current.instanceColor) {
-      flashHeads.current.instanceColor.needsUpdate = true;
-    }
+    markFeedbackForUpdate(bodies.current);
+    markFeedbackForUpdate(heads.current);
+    markFeedbackForUpdate(legs.current);
   });
 
   return (
@@ -1055,50 +1182,32 @@ function EnemyWave({ wave, enemies, waveState, distanceRef }) {
       </mesh>
       <instancedMesh ref={bodies} args={[null, null, enemies.length]} castShadow>
         <dodecahedronGeometry args={[0.23, 0]} />
-        <meshStandardMaterial
+        <FeedbackMaterial
+          greyColor="#55585a"
+          cacheKey={`enemy-body-${wave.gateIndex}`}
           color="#e54f32"
-          vertexColors
           emissive="#681109"
-          emissiveIntensity={0.38}
+          emissiveIntensity={0.3}
           metalness={0.48}
           roughness={0.32}
         />
       </instancedMesh>
       <instancedMesh ref={heads} args={[null, null, enemies.length]} castShadow>
         <sphereGeometry args={[0.14, 8, 8]} />
-        <meshStandardMaterial
+        <FeedbackMaterial
+          greyColor="#77797a"
+          cacheKey={`enemy-head-${wave.gateIndex}`}
           color="#ffbc83"
-          vertexColors
-          emissive="#ff4d24"
-          emissiveIntensity={0.42}
+          emissive="#5f1608"
+          emissiveIntensity={0.22}
         />
       </instancedMesh>
       <instancedMesh ref={legs} args={[null, null, enemies.length]}>
         <boxGeometry args={[0.38, 0.32, 0.07]} />
-        <meshStandardMaterial color="#51222c" vertexColors />
-      </instancedMesh>
-      <instancedMesh ref={flashBodies} args={[null, null, enemies.length]}>
-        <dodecahedronGeometry args={[0.23, 0]} />
-        <meshBasicMaterial
-          color="#ffffff"
-          vertexColors
-          toneMapped={false}
-          transparent
-          opacity={1}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </instancedMesh>
-      <instancedMesh ref={flashHeads} args={[null, null, enemies.length]}>
-        <sphereGeometry args={[0.14, 8, 8]} />
-        <meshBasicMaterial
-          color="#ffffff"
-          vertexColors
-          toneMapped={false}
-          transparent
-          opacity={1}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
+        <FeedbackMaterial
+          greyColor="#4d5052"
+          cacheKey={`enemy-legs-${wave.gateIndex}`}
+          color="#51222c"
         />
       </instancedMesh>
     </group>
@@ -1116,6 +1225,10 @@ function Boss({
   const ref = useRef();
   const coreMaterial = useRef();
   const hitMaterials = useRef([]);
+  const baseColor = useMemo(() => new THREE.Color(), []);
+  const white = useMemo(() => new THREE.Color("#ffffff"), []);
+  const coreBase = useMemo(() => new THREE.Color("#ecffff"), []);
+  const coreEmissive = useMemo(() => new THREE.Color(), []);
 
   useFrame((state) => {
     if (!ref.current) return;
@@ -1125,7 +1238,12 @@ function Boss({
       distanceRef.current >= TRACK_END - 12 && z > -40 && z < 8;
     ref.current.rotation.y = Math.sin(state.clock.elapsedTime * 0.65) * 0.08;
     const hitAge = state.clock.elapsedTime - hitRef.current;
-    const hit = hitAge >= 0 && hitAge < 0.11 ? 1 - hitAge / 0.11 : 0;
+    const hit =
+      hitAge < 0 || hitAge >= 0.5
+        ? 0
+        : hitAge < 0.08
+          ? THREE.MathUtils.smoothstep(hitAge, 0, 0.08)
+          : 1 - THREE.MathUtils.smoothstep(hitAge, 0.08, 0.5);
     ref.current.scale.set(1 + hit * 0.08, 1 - hit * 0.12, 1 + hit * 0.08);
     const attackAge = state.clock.elapsedTime - attackRef.current;
     const attacking =
@@ -1135,17 +1253,18 @@ function Boss({
     ref.current.rotation.x = -attacking * 0.08;
     hitMaterials.current.forEach((material) => {
       if (!material) return;
-      material.color.set(hit > 0 ? "#ffffff" : material.userData.baseColor);
+      material.color
+        .copy(baseColor.set(material.userData.baseColor))
+        .lerp(white, hit);
       if (material.emissive) {
         material.emissiveIntensity =
-          (material.userData.baseEmissive ?? 0) + attacking * 3;
+          (material.userData.baseEmissive ?? 0) + attacking * 3 + hit * 2.5;
       }
     });
     if (coreMaterial.current) {
-      coreMaterial.current.color.set(hit > 0 ? "#ffffff" : "#ecffff");
-      coreMaterial.current.emissive.set(hit > 0
-        ? "#ffffff"
-        : healthRef.current < 45 ? "#ff5a27" : "#00a7df");
+      coreMaterial.current.color.copy(coreBase).lerp(white, hit);
+      coreEmissive.set(healthRef.current < 45 ? "#ff5a27" : "#00a7df");
+      coreMaterial.current.emissive.copy(coreEmissive).lerp(white, hit);
       coreMaterial.current.emissiveIntensity = activeRef.current
         ? 1.25 + (1 - healthRef.current / 100) + hit * 4
         : 0.45;
@@ -1267,8 +1386,17 @@ function Boss({
 
 function FloatingIsland({ x, baseZ, scale = 1, distanceRef }) {
   const ref = useRef();
-  useFrame(() => {
-    if (ref.current) ref.current.position.z = baseZ + (distanceRef.current % 48);
+  useFrame((state) => {
+    if (!ref.current) return;
+    const loopStart = -126;
+    const loopLength = 154;
+    ref.current.position.z =
+      THREE.MathUtils.euclideanModulo(
+        baseZ + distanceRef.current - loopStart,
+        loopLength,
+      ) + loopStart;
+    ref.current.position.y =
+      -1.7 + Math.sin(state.clock.elapsedTime * 0.42 + baseZ) * 0.11;
   });
   return (
     <group ref={ref} position={[x, -1.7, baseZ]} scale={scale}>
@@ -1335,17 +1463,22 @@ function Road({ distanceRef }) {
 
 function SkyEnvironment() {
   const { scene } = useThree();
+  const isCompact =
+    typeof window !== "undefined" &&
+    (window.innerWidth < 900 || window.devicePixelRatio > 2);
   const texture = useLoader(
     THREE.TextureLoader,
-    "/assets/azure-sky-panorama-v1.jpg",
+    isCompact
+      ? "/assets/azure-sky-panorama-v2-2k.jpg"
+      : "/assets/azure-sky-panorama-v2-4k.jpg",
   );
   useEffect(() => {
     texture.mapping = THREE.EquirectangularReflectionMapping;
     texture.colorSpace = THREE.SRGBColorSpace;
     scene.background = texture;
     scene.environment = texture;
-    scene.backgroundIntensity = 0.78;
-    scene.environmentIntensity = 0.58;
+    scene.backgroundIntensity = 0.94;
+    scene.environmentIntensity = 0.64;
     return () => {
       if (scene.background === texture) scene.background = null;
       if (scene.environment === texture) scene.environment = null;
@@ -1359,7 +1492,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
   const gates = useMemo(() => createGates(runSeed), [runSeed]);
   const playerX = useRef(0);
   const pointerTargetX = useRef(0);
-  const distance = useRef(DEBUG_BOSS_TEST ? TRACK_END : 0);
+  const distance = useRef(DEBUG_BOSS_TEST ? TRACK_END : DEBUG_START_AT);
   const troops = useRef(DEBUG_BOSS_TEST ? 80 : DEBUG_ENEMY_RUSH ? 40 : 12);
   const combo = useRef(1);
   const bossHealth = useRef(100);
@@ -1370,6 +1503,8 @@ function World({ status, runSeed, onFrameData, onEvent }) {
     gates.map((gate) => ({
       leftValue: gate.left,
       rightValue: gate.right,
+      leftCharge: 0,
+      rightCharge: 0,
       leftHit: 0,
       rightHit: 0,
       resolved: DEBUG_BOSS_TEST,
@@ -1445,6 +1580,10 @@ function World({ status, runSeed, onFrameData, onEvent }) {
       vx: 0,
       vz: 0,
       life: 0,
+      targetX: 0,
+      targetZ: 3.05,
+      radius: 1.15,
+      spawnedAt: -10,
     })),
   );
   const shotTimer = useRef(0);
@@ -1470,7 +1609,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
       regionIndex,
       phase: gateStates.current[regionIndex].resolved
         ? "wave"
-        : gateDistance <= 27
+        : gateDistance <= 27 + regionIndex * 9
           ? "gate"
           : "travel",
     };
@@ -1500,7 +1639,12 @@ function World({ status, runSeed, onFrameData, onEvent }) {
       (unit) => unit.active && !unit.dying && unit.scale > 0.72,
     );
     if (!activeShooters.length) return;
-    const count = clamp(2 + Math.floor(troops.current / 15), 2, rapid ? 10 : 8);
+    const count =
+      stage.phase === "gate"
+        ? rapid
+          ? 3
+          : 2
+        : clamp(2 + Math.floor(troops.current / 15), 2, rapid ? 10 : 8);
     const sorted = [...activeShooters].sort((a, b) => a.x - b.x);
     const shooterIndices = Array.from({ length: count }, (_, index) =>
       Math.round((index / Math.max(1, count - 1)) * (sorted.length - 1)),
@@ -1591,6 +1735,10 @@ function World({ status, runSeed, onFrameData, onEvent }) {
       projectile.vx = (targetX - muzzleX) / travelTime;
       projectile.vz = 8.2;
       projectile.life = 2.6;
+      projectile.targetX = targetX;
+      projectile.targetZ = 3.05;
+      projectile.radius = 1.15 + (100 - bossHealth.current) * 0.0035;
+      projectile.spawnedAt = time;
     });
     bossAttackAt.current = time;
     onEvent({ type: "boss-fire" });
@@ -1723,8 +1871,16 @@ function World({ status, runSeed, onFrameData, onEvent }) {
         shotTimer.current -= delta;
         heavyShotTimer.current -= delta;
         if (shotTimer.current <= 0) {
+          const stage = getCombatStage();
           spawnVolley(rapidRef.current);
-          shotTimer.current = rapidRef.current ? 0.065 : 0.125;
+          shotTimer.current =
+            stage.phase === "gate"
+              ? rapidRef.current
+                ? 0.14
+                : 0.22
+              : rapidRef.current
+                ? 0.065
+                : 0.125;
         }
         if (heavyShotTimer.current <= 0) {
           spawnHeavyShot(state.clock.elapsedTime);
@@ -1823,13 +1979,21 @@ function World({ status, runSeed, onFrameData, onEvent }) {
           const gateState = gateStates.current[target.gateIndex];
           const gate = gates[target.gateIndex];
           const valueKey = `${target.side}Value`;
-          const increase =
-            gate.hitStep * (bullet.heavy ? 3 : bullet.rapid ? 2 : 1);
-          gateState[valueKey] = clamp(
-            gateState[valueKey] + increase,
-            -99,
-            gate.maxValue,
-          );
+          const chargeKey = `${target.side}Charge`;
+          const chargeWeight = bullet.heavy ? 2.25 : bullet.rapid ? 0.72 : 1;
+          gateState[chargeKey] += chargeWeight;
+          let increase = 0;
+          while (gateState[chargeKey] >= gate.shotsPerPoint) {
+            gateState[chargeKey] -= gate.shotsPerPoint;
+            increase += 1;
+          }
+          if (increase > 0) {
+            gateState[valueKey] = clamp(
+              gateState[valueKey] + increase,
+              -99,
+              gate.maxValue,
+            );
+          }
           gateState[`${target.side}Hit`] = 1;
           spawnImpact(
             collisionX,
@@ -1895,9 +2059,9 @@ function World({ status, runSeed, onFrameData, onEvent }) {
                 if (nearby.hp <= 0) {
                   nearby.alive = false;
                   nearby.deathAt = state.clock.elapsedTime;
-                  nearby.vx = (nearby.currentX >= enemy.currentX ? 1 : -1) * 1.2;
-                  nearby.vy = 2.4 + Math.random() * 0.7;
-                  nearby.vz = 1.4;
+                  nearby.vx = (nearby.currentX >= enemy.currentX ? 1 : -1) * 2.1;
+                  nearby.vy = 3.5 + Math.random() * 1.0;
+                  nearby.vz = -3.2 - Math.random() * 1.1;
                   nearby.spinX = 7;
                   nearby.spinY = 8;
                   nearby.spinZ = nearby.vx * -5;
@@ -1909,9 +2073,9 @@ function World({ status, runSeed, onFrameData, onEvent }) {
             enemy.alive = false;
             enemy.deathAt = state.clock.elapsedTime;
             const horizontal = clamp((enemy.currentX - collisionX) * 3, -1.8, 1.8);
-            enemy.vx = horizontal + (enemy.currentX >= 0 ? 0.45 : -0.45);
-            enemy.vy = 2.6 + Math.random() * 0.9;
-            enemy.vz = 1.2 + Math.random() * 1.1;
+            enemy.vx = (horizontal + (enemy.currentX >= 0 ? 0.65 : -0.65)) * 1.45;
+            enemy.vy = 3.7 + Math.random() * 1.1;
+            enemy.vz = -3.4 - Math.random() * 1.4;
             enemy.spinX = 5 + Math.random() * 5;
             enemy.spinY = 5 + Math.random() * 6;
             enemy.spinZ = (enemy.currentX >= 0 ? -1 : 1) * (6 + Math.random() * 5);
@@ -2042,7 +2206,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
                 victim,
                 state.clock.elapsedTime,
                 impulseX,
-                1.15,
+                1.65,
               )
             ) {
               troops.current = Math.max(0, troops.current - 1);
@@ -2060,9 +2224,9 @@ function World({ status, runSeed, onFrameData, onEvent }) {
             enemy.alive = false;
             enemy.hitAt = state.clock.elapsedTime;
             enemy.deathAt = state.clock.elapsedTime;
-            enemy.vx = -impulseX * 0.7;
-            enemy.vy = 2.5 + Math.random() * 0.7;
-            enemy.vz = -0.7;
+            enemy.vx = -impulseX * 1.15;
+            enemy.vy = 3.6 + Math.random() * 0.9;
+            enemy.vz = -3.1;
             enemy.spinX = 7 + Math.random() * 4;
             enemy.spinY = 6 + Math.random() * 4;
             enemy.spinZ = (enemy.currentX >= worldVictimX ? 1 : -1) * 8;
@@ -2130,8 +2294,8 @@ function World({ status, runSeed, onFrameData, onEvent }) {
                 killArmyUnit(
                   victim,
                   state.clock.elapsedTime,
-                  victim.x * 1.8,
-                  1.4,
+                  victim.x * 2.3,
+                  1.9,
                 )
               ) {
                 troops.current = Math.max(0, troops.current - 1);
@@ -2151,45 +2315,57 @@ function World({ status, runSeed, onFrameData, onEvent }) {
           projectile.life -= delta;
           projectile.x += projectile.vx * delta;
           projectile.z += projectile.vz * delta;
-          if (projectile.life <= 0 || projectile.z > 5.2) {
+          if (projectile.life <= 0) {
             projectile.active = false;
             return;
           }
-          const victim = findNearestArmyUnit(
-            armyUnits.current,
-            projectile.x,
-            projectile.z,
-            playerX.current,
-          );
-          if (!victim) return;
+          if (projectile.z < projectile.targetZ) return;
           projectile.active = false;
-          if (
-            killArmyUnit(
-              victim,
-              state.clock.elapsedTime,
-              projectile.vx * 0.35,
-              1.25,
-            )
-          ) {
-            troops.current = Math.max(0, troops.current - 1);
-            lastPlayerDeath.current = {
-              source: "boss-projectile",
-              victimId: victim.index,
-              projectileX: projectile.x,
-              victimX: playerX.current + victim.x,
-              at: state.clock.elapsedTime,
-            };
-          }
+          const maxVictims = bossHealth.current < 45 ? 5 : 3;
+          const victims = armyUnits.current
+            .filter((unit) => unit.active && !unit.dying && unit.scale > 0.45)
+            .map((unit) => {
+              const worldX = playerX.current + unit.x;
+              const dx = worldX - projectile.targetX;
+              const dz = unit.z - projectile.targetZ;
+              return { unit, worldX, distance: Math.hypot(dx, dz), dx, dz };
+            })
+            .filter((entry) => entry.distance <= projectile.radius)
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, maxVictims);
+          victims.forEach(({ unit, worldX, dx, dz }) => {
+            if (
+              killArmyUnit(
+                unit,
+                state.clock.elapsedTime,
+                clamp(dx * 3.2, -3.4, 3.4),
+                2.3 + Math.max(0, -dz) * 0.5,
+              )
+            ) {
+              troops.current = Math.max(0, troops.current - 1);
+              lastPlayerDeath.current = {
+                source: "boss-projectile",
+                victimId: unit.index,
+                projectileX: projectile.targetX,
+                victimX: worldX,
+                at: state.clock.elapsedTime,
+              };
+            }
+          });
           spawnImpact(
-            playerX.current + victim.x,
+            projectile.targetX,
             0.7,
-            victim.z,
+            projectile.targetZ,
             "#ff5a2f",
-            0.3,
-            1.6,
+            0.48,
+            projectile.radius * 2.15,
           );
-          shake.current = Math.max(shake.current, 0.2);
-          onEvent({ type: "boss-projectile-hit", troops: troops.current });
+          shake.current = Math.max(shake.current, 0.34);
+          onEvent({
+            type: "boss-projectile-hit",
+            losses: victims.length,
+            troops: troops.current,
+          });
         });
 
         if (bossHealth.current <= 0 && !finished.current) {
@@ -2258,6 +2434,22 @@ function World({ status, runSeed, onFrameData, onEvent }) {
               }),
               { minX: 99, maxX: -99, minZ: 99, maxZ: -99 },
             ),
+          armyVisualSamples: armyUnits.current
+            .filter((unit) => unit.active)
+            .slice(0, 12)
+            .map((unit) => ({
+              index: unit.index,
+              glowAge: state.clock.elapsedTime - unit.glowAt,
+              hitAge: state.clock.elapsedTime - unit.hitAt,
+              dying: unit.dying,
+              deathAge: unit.dying
+                ? state.clock.elapsedTime - unit.deathAt
+                : null,
+              bodyColor: unit.debugBodyColor,
+              glowIntensity: unit.debugGlowIntensity,
+              hitIntensity: unit.debugHitIntensity,
+              greyAmount: unit.debugGreyAmount,
+            })),
           gateStates: gateStates.current.map((gate) => ({ ...gate })),
           aliveByWave: waveEnemies.current.map(
             (wave) => wave.filter((enemy) => enemy.alive).length,
@@ -2277,6 +2469,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
             slow: DEBUG_SLOW,
             noAdvance: DEBUG_NO_ADVANCE,
             stopAt: DEBUG_STOP_AT,
+            startAt: DEBUG_START_AT,
           },
         };
       }
@@ -2286,7 +2479,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
   return (
     <>
       <SkyEnvironment />
-      <fog attach="fog" args={["#a8e6ef", 31, 92]} />
+      <fog attach="fog" args={["#c9f2f5", 48, 132]} />
       <ambientLight intensity={0.36} color="#c8f7ff" />
       <hemisphereLight args={["#dfffff", "#075b79", 0.82]} />
       <directionalLight
@@ -2302,22 +2495,13 @@ function World({ status, runSeed, onFrameData, onEvent }) {
         shadow-camera-bottom={-4}
       />
 
-      <mesh
-        position={[0, -2.35, -30]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        receiveShadow
-      >
-        <planeGeometry args={[180, 240]} />
-        <meshStandardMaterial color="#087b98" metalness={0.15} roughness={0.4} />
-      </mesh>
-
-      {[-74, -58, -42, -26, -10, 6].map((baseZ, index) => (
+      {[-118, -104, -90, -76, -62, -48, -34, -20, -6, 8, 22].map((baseZ, index) => (
         <FloatingIsland
           key={baseZ}
-          x={index % 2 ? 10.2 : -10.2}
+          x={(index % 2 ? 1 : -1) * (10.4 + (index % 3) * 1.7)}
           baseZ={baseZ}
           distanceRef={distance}
-          scale={0.78 + (index % 3) * 0.18}
+          scale={0.48 + (index % 4) * 0.12}
         />
       ))}
 
@@ -2350,6 +2534,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
           enemies={waveEnemies.current[index]}
           waveState={waveStates.current[index]}
           distanceRef={distance}
+          active={status === "playing"}
         />
       ))}
       <Boss
@@ -2375,6 +2560,9 @@ function World({ status, runSeed, onFrameData, onEvent }) {
       {!DEBUG_NO_PROJECTILES && <ProjectilePool bulletsRef={bullets} />}
       {!DEBUG_NO_PROJECTILES && (
         <BossProjectilePool projectilesRef={bossProjectiles} />
+      )}
+      {!DEBUG_NO_EFFECTS && (
+        <BossTargetTelegraphs projectilesRef={bossProjectiles} />
       )}
       {!DEBUG_NO_EFFECTS && <BossShockwave shockwaveRef={bossShockwave} />}
       {!DEBUG_NO_EFFECTS && <ImpactPool impactsRef={impacts} />}
@@ -2626,6 +2814,9 @@ export function App() {
         playTone(92, 0.16, "sawtooth", 0.035);
         playTone(210, 0.08, "square", 0.02, 0.03);
       } else if (event.type === "boss-projectile-hit") {
+        if (event.losses > 0) {
+          showFlash(`BOSS BLAST  -${event.losses}`, "danger", 520);
+        }
         playTone(118, 0.12, "square", 0.028);
       } else if (event.type === "boss-shockwave") {
         showFlash(`SHOCKWAVE  -${event.losses}`, "danger", 560);

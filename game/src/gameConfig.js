@@ -8,17 +8,17 @@ export const MAX_IMPACTS = 40;
 export const MAX_VISIBLE_TROOPS = 96;
 
 const GATE_TEMPLATES = [
-  { z: 28, left: [-14, -7], right: [2, 7] },
-  { z: 67, left: [-8, 0], right: [4, 11] },
-  { z: 108, left: [-18, -9], right: [-5, 3] },
-  { z: 145, left: [-12, -3], right: [1, 8] },
+  { z: 28, left: [-9, -4], right: [1, 5], shotsPerPoint: 1.5 },
+  { z: 67, left: [-16, -9], right: [-2, 4], shotsPerPoint: 2.5 },
+  { z: 108, left: [-25, -16], right: [-9, 0], shotsPerPoint: 3.5 },
+  { z: 145, left: [-36, -25], right: [-16, -5], shotsPerPoint: 4.5 },
 ];
 
 export const WAVES = [
-  { z: 54, count: 36, speed: 1.9, gateIndex: 0 },
-  { z: 94, count: 48, speed: 2.2, gateIndex: 1 },
-  { z: 135, count: 64, speed: 2.5, gateIndex: 2 },
-  { z: 166, count: 80, speed: 2.8, gateIndex: 3 },
+  { z: 54, count: 40, speed: 1.9, gateIndex: 0 },
+  { z: 94, count: 58, speed: 2.2, gateIndex: 1 },
+  { z: 135, count: 78, speed: 2.5, gateIndex: 2 },
+  { z: 166, count: 104, speed: 2.8, gateIndex: 3 },
 ];
 
 const seeded = (seed) => {
@@ -38,16 +38,10 @@ export function createGates(runSeed = 1) {
     let left = pickRange(random, template.left);
     let right = pickRange(random, template.right);
 
-    // Every pair keeps at least one recoverable route while still varying per run.
-    if (Math.max(left, right) < 1) {
-      if (random() > 0.5) left = 1 + index * 2;
-      else right = 1 + index * 2;
-    }
-
     return {
       z: template.z,
-      hitStep: index >= 2 ? 2 : 1,
-      maxValue: 55 + index * 10,
+      shotsPerPoint: template.shotsPerPoint,
+      maxValue: 32 + index * 10,
       left,
       right,
     };
