@@ -95,6 +95,21 @@ The revised implementation preserves the selected concept's portrait composition
 - Performance remained approximately `109–112 FPS` in the active high-effect development sample.
 - Final production run completed with `238` survivors, combo `×5`, and zero browser runtime errors.
 
+## v5.3 gate, wave and Boss projectile verification
+
+- Real troop count remains capped at `320`; visible troop rendering increased from `96` to `128` so late gate growth remains visible longer.
+- HUD now shows the rendered crowd cap as `128 VIS` when the true troop count exceeds the visible troop cap.
+- Gate templates now start the later negative lanes lower: zone 3 uses `[-26, -16]`, and zone 4 uses `[-34, -22]`.
+- Enemy wave counts increased to `48/74/104/132`, putting more troop control into regional attrition.
+- Boss volley behavior changed from two lateral projectiles per volley to one centered projectile per volley.
+- Boss projectile radius now starts around `1.28` and scales upward; final autoPilot run recorded radii `1.31`, `1.36`, `1.41`, `1.46`, `1.51` across the first five Boss shots.
+- Full autoPilot verification at `390 × 844` won the run with peak troops `127`, Boss start troops `78`, final troops `57`, combo `×7`, and Boss duration `16.35s`.
+- The same run recorded gate gains `+24`, `+31`, `+38`, `+45`, wave losses `79`, Boss projectile losses `0`, and max active Boss projectiles `1`.
+- Boss-focused verification recorded three consecutive `boss-fire` events with `projectiles: 1`, radii `1.29`, `1.32`, `1.35`, and max active Boss projectiles `1`.
+- Browser verification reported zero runtime errors. Remaining console warnings are the existing Three.js Clock deprecation and shader precision warnings.
+- Production build passed; remaining build warning is the existing large vendor chunk warning.
+- Evidence screenshot: `F:/Users/Yoru17/Documents/Git项目/SkylineLegion/output/playwright/v5.3-final-autopilot.png`.
+
 ## Required fidelity surfaces
 
 - Fonts and typography: system display and Chinese UI fallbacks render consistently without external font requests.

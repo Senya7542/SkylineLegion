@@ -2236,26 +2236,32 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
 
   const spawnBossVolley = (time) => {
     const bossZ = distance.current - BOSS_Z + bossAdvance.current;
-    [-1.65, 1.65].forEach((muzzleX, index) => {
-      const projectile = bossProjectiles.current.find((item) => !item.active);
-      if (!projectile) return;
-      const targetX =
-        playerX.current + (index ? 0.28 : -0.28) + (Math.random() - 0.5) * 0.18;
-      const travelTime = Math.max(0.8, (3.1 - bossZ) / 8.2);
-      projectile.active = true;
-      projectile.x = muzzleX;
-      projectile.y = 1.05;
-      projectile.z = bossZ + 0.1;
-      projectile.vx = (targetX - muzzleX) / travelTime;
-      projectile.vz = 8.2;
-      projectile.life = 2.6;
-      projectile.targetX = targetX;
-      projectile.targetZ = 3.05;
-      projectile.radius =
-        0.82 + (BOSS_MAX_HEALTH - bossHealth.current) * 0.0022;
-      projectile.spawnedAt = time;
-    });
+    const projectile = bossProjectiles.current.find((item) => !item.active);
+    if (!projectile) return;
+    const muzzleX = 0;
+    const targetX = clamp(
+      playerX.current + (Math.random() - 0.5) * 0.42,
+      -PLAYER_LIMIT,
+      PLAYER_LIMIT,
+    );
+    const travelTime = Math.max(0.8, (3.1 - bossZ) / 8.2);
+    projectile.active = true;
+    projectile.x = muzzleX;
+    projectile.y = 1.05;
+    projectile.z = bossZ + 0.1;
+    projectile.vx = (targetX - muzzleX) / travelTime;
+    projectile.vz = 8.2;
+    projectile.life = 2.6;
+    projectile.targetX = targetX;
+    projectile.targetZ = 3.05;
+    const radius = 1.28 + (BOSS_MAX_HEALTH - bossHealth.current) * 0.0032;
+    projectile.radius = radius;
+    projectile.spawnedAt = time;
     bossAttackAt.current = time;
+    recordBalanceEvent("boss-fire", time, {
+      projectiles: 1,
+      radius: Number(radius.toFixed(2)),
+    });
     onEvent({ type: "boss-fire" });
   };
 
@@ -3027,6 +3033,8 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       uiTimer.current = 0;
       onFrameData({
         troops: troops.current,
+        visibleTroops: Math.min(troops.current, MAX_VISIBLE_TROOPS),
+        visibleTroopCap: MAX_VISIBLE_TROOPS,
         combo: combo.current,
         bossHealth: getBossHealthPercent(),
         progress: Math.min(100, (distance.current / TRACK_END) * 100),
@@ -3175,13 +3183,18 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
 }
 
 function HUD({ data, status, sound, onPause, onSound, onFullscreen }) {
+  const visibleCapLabel =
+    data.troops > data.visibleTroopCap
+      ? `${data.visibleTroopCap} VIS`
+      : "UNITS";
+
   return (
     <div className="hud" aria-live="polite">
       <div className="hud-top">
         <div className="squad-chip">
           <span className="eyebrow">SKY LEGION</span>
           <strong>{data.troops}</strong>
-          <span className="unit-label">UNITS</span>
+          <span className="unit-label">{visibleCapLabel}</span>
         </div>
         <div className="combo">
           <span>COMBO</span>
@@ -3324,6 +3337,8 @@ export function App() {
   const [isRecord, setIsRecord] = useState(false);
   const [data, setData] = useState({
     troops: 12,
+    visibleTroops: 12,
+    visibleTroopCap: MAX_VISIBLE_TROOPS,
     combo: 1,
     bossHealth: 100,
     progress: 0,
@@ -3493,6 +3508,8 @@ export function App() {
     playTone(520, 0.1, "triangle", 0.035);
     setData({
       troops: 12,
+      visibleTroops: 12,
+      visibleTroopCap: MAX_VISIBLE_TROOPS,
       combo: 1,
       bossHealth: 100,
       progress: 0,

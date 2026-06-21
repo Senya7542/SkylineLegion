@@ -5,20 +5,20 @@ export const LANE_X = 1.62;
 export const PLAYER_GATE_CONTACT_Z = 2.35;
 export const MAX_BULLETS = 128;
 export const MAX_IMPACTS = 40;
-export const MAX_VISIBLE_TROOPS = 96;
+export const MAX_VISIBLE_TROOPS = 128;
 
 const GATE_TEMPLATES = [
   { z: 28, left: [-10, -5], right: [1, 4], shotsPerPoint: 1 },
-  { z: 67, left: [-14, -7], right: [-1, 5], shotsPerPoint: 1 },
-  { z: 108, left: [-18, -10], right: [-4, 4], shotsPerPoint: 1 },
-  { z: 145, left: [-22, -13], right: [-6, 3], shotsPerPoint: 1 },
+  { z: 67, left: [-16, -9], right: [-3, 4], shotsPerPoint: 1 },
+  { z: 108, left: [-26, -16], right: [-9, 3], shotsPerPoint: 1 },
+  { z: 145, left: [-34, -22], right: [-14, 1], shotsPerPoint: 1 },
 ];
 
 export const WAVES = [
-  { z: 54, count: 44, speed: 2.05, gateIndex: 0 },
-  { z: 94, count: 66, speed: 2.32, gateIndex: 1 },
-  { z: 135, count: 86, speed: 2.62, gateIndex: 2 },
-  { z: 166, count: 108, speed: 2.92, gateIndex: 3 },
+  { z: 54, count: 48, speed: 2.05, gateIndex: 0 },
+  { z: 94, count: 74, speed: 2.32, gateIndex: 1 },
+  { z: 135, count: 104, speed: 2.62, gateIndex: 2 },
+  { z: 166, count: 132, speed: 2.92, gateIndex: 3 },
 ];
 
 const seeded = (seed) => {
