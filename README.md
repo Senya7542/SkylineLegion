@@ -2,6 +2,12 @@
 
 一款原创的竖屏 3D 倍增门射击网页游戏。驾驶悬浮炮艇、击穿能量门、扩张军团并摧毁天穹核心。
 
+## 在线试玩
+
+- GitHub Pages：<https://senya7542.github.io/SkylineLegion/>
+
+首次启用 Pages 或每次推送新版本后，GitHub Actions 通常需要几十秒到几分钟完成构建部署。
+
 ## 操作
 
 - 鼠标或手指左右移动
@@ -26,3 +32,14 @@ npm run dev
 - `public/assets/`：背景图、参考图等静态资源
 - `design-qa.md`：阶段记录、设计检查和优化备注
 - `package.json`：本地运行与构建脚本
+
+## 自动部署
+
+推送到 `main` 分支后，`.github/workflows/deploy-pages.yml` 会自动运行：
+
+1. 安装依赖
+2. 执行 `npm run build`
+3. 上传 `dist/`
+4. 部署到 GitHub Pages
+
+如果之后再次修改 GitHub 仓库名，Pages 地址会跟随仓库名变化，README 里的链接也需要同步改一下。
