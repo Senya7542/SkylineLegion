@@ -73,6 +73,7 @@ const DEBUG_BOSS_PIN = DEBUG_FLAGS.has("bossPin");
 const DEBUG_ENEMY_RUSH = DEBUG_FLAGS.has("enemyRush");
 const DEBUG_AUTO_PILOT = DEBUG_FLAGS.has("autoPilot");
 const MAX_BOSS_PROJECTILES = 36;
+const BOSS_MAX_HEALTH = 126;
 const BOOT_MIN_DURATION = 720;
 const INTRO_DURATION = 920;
 const FEEDBACK_COLOR_ATTRIBUTE = "instanceFeedback";
@@ -1987,7 +1988,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
   const distance = useRef(DEBUG_BOSS_TEST ? TRACK_END : DEBUG_START_AT);
   const troops = useRef(DEBUG_BOSS_TEST ? 80 : DEBUG_ENEMY_RUSH ? 40 : 12);
   const combo = useRef(1);
-  const bossHealth = useRef(82);
+  const bossHealth = useRef(BOSS_MAX_HEALTH);
   const rapidUntil = useRef(0);
   const rapidRef = useRef(false);
   const drones = useRef(0);
@@ -2250,7 +2251,8 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       projectile.life = 2.6;
       projectile.targetX = targetX;
       projectile.targetZ = 3.05;
-      projectile.radius = 0.82 + (82 - bossHealth.current) * 0.0022;
+      projectile.radius =
+        0.82 + (BOSS_MAX_HEALTH - bossHealth.current) * 0.0022;
       projectile.spawnedAt = time;
     });
     bossAttackAt.current = time;
@@ -2265,7 +2267,8 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       distance: Number(distance.current.toFixed(2)),
       troops: troops.current,
       combo: combo.current,
-      bossHealth: Number(bossHealth.current.toFixed(1)),
+      bossHealth: Number(getBossHealthPercent().toFixed(1)),
+      bossHp: Number(bossHealth.current.toFixed(1)),
       ...payload,
     });
     if (balanceLog.current.length > 120) balanceLog.current.shift();
@@ -2282,15 +2285,16 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     });
   };
 
+  const getBossHealthPercent = () =>
+    clamp((bossHealth.current / BOSS_MAX_HEALTH) * 100, 0, 100);
+
   const getAutoPilotTargetX = () => {
     const nextGateIndex = gates.findIndex(
       (_, index) => !gateStates.current[index].resolved,
     );
     if (nextGateIndex >= 0) {
-      const gateState = gateStates.current[nextGateIndex];
-      const leftScore = gateState.leftValue;
-      const rightScore = gateState.rightValue;
-      return leftScore > rightScore ? -PLAYER_LIMIT * 0.82 : PLAYER_LIMIT * 0.82;
+      const gateDistance = gates[nextGateIndex].z - distance.current;
+      if (gateDistance < 34) return PLAYER_LIMIT * 0.82;
     }
     const activeWaveIndex = WAVES.findIndex((_, index) => {
       const waveState = waveStates.current[index];
@@ -2311,7 +2315,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     if (bossActive.current) {
       return Math.sin(performance.now() / 520) * PLAYER_LIMIT * 0.72;
     }
-    return 0;
+    return PLAYER_LIMIT * 0.82;
   };
 
   useEffect(() => {
@@ -2670,7 +2674,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           bossHealth.current = Math.max(
             0,
             bossHealth.current -
-              (bullet.heavy ? 2.4 : bullet.rapid ? 0.34 : 0.22),
+              (bullet.heavy ? 1.5 : bullet.rapid ? 0.21 : 0.135),
           );
         }
         lastHit.current = {
@@ -2876,16 +2880,16 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
             bossAdvance.current = Math.min(
               7.1,
               bossAdvance.current +
-                delta * (0.72 + (100 - bossHealth.current) * 0.0035),
+                delta * (0.82 + (BOSS_MAX_HEALTH - bossHealth.current) * 0.0028),
             );
             bossVolleyTimer.current -= delta;
             bossShockwaveTimer.current -= delta;
             if (bossVolleyTimer.current <= 0) {
-              bossVolleyTimer.current = 2.2;
+              bossVolleyTimer.current = 1.95;
               spawnBossVolley(state.clock.elapsedTime);
             }
             if (bossZ > -7.4 && bossShockwaveTimer.current <= 0) {
-              bossShockwaveTimer.current = 5.2;
+              bossShockwaveTimer.current = 4.7;
               bossShockwave.current = {
                 at: state.clock.elapsedTime,
                 z: bossZ + 0.2,
@@ -2927,7 +2931,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           }
           if (projectile.z < projectile.targetZ) return;
           projectile.active = false;
-          const maxVictims = bossHealth.current < 35 ? 2 : 1;
+          const maxVictims = getBossHealthPercent() < 35 ? 2 : 1;
           const victims = armyUnits.current
             .filter((unit) => unit.active && !unit.dying && unit.scale > 0.45)
             .map((unit) => {
@@ -3024,7 +3028,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       onFrameData({
         troops: troops.current,
         combo: combo.current,
-        bossHealth: bossHealth.current,
+        bossHealth: getBossHealthPercent(),
         progress: Math.min(100, (distance.current / TRACK_END) * 100),
         boss: bossActive.current,
         rapid: rapidRef.current,

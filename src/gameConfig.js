@@ -8,17 +8,17 @@ export const MAX_IMPACTS = 40;
 export const MAX_VISIBLE_TROOPS = 96;
 
 const GATE_TEMPLATES = [
-  { z: 28, left: [-8, -4], right: [2, 6], shotsPerPoint: 1 },
-  { z: 67, left: [-11, -5], right: [0, 6], shotsPerPoint: 1 },
-  { z: 108, left: [-15, -8], right: [-3, 5], shotsPerPoint: 1 },
-  { z: 145, left: [-18, -10], right: [-4, 4], shotsPerPoint: 1 },
+  { z: 28, left: [-10, -5], right: [1, 4], shotsPerPoint: 1 },
+  { z: 67, left: [-14, -7], right: [-1, 5], shotsPerPoint: 1 },
+  { z: 108, left: [-18, -10], right: [-4, 4], shotsPerPoint: 1 },
+  { z: 145, left: [-22, -13], right: [-6, 3], shotsPerPoint: 1 },
 ];
 
 export const WAVES = [
-  { z: 54, count: 40, speed: 1.9, gateIndex: 0 },
-  { z: 94, count: 58, speed: 2.2, gateIndex: 1 },
-  { z: 135, count: 74, speed: 2.5, gateIndex: 2 },
-  { z: 166, count: 90, speed: 2.8, gateIndex: 3 },
+  { z: 54, count: 44, speed: 2.05, gateIndex: 0 },
+  { z: 94, count: 66, speed: 2.32, gateIndex: 1 },
+  { z: 135, count: 86, speed: 2.62, gateIndex: 2 },
+  { z: 166, count: 108, speed: 2.92, gateIndex: 3 },
 ];
 
 const seeded = (seed) => {
@@ -41,7 +41,7 @@ export function createGates(runSeed = 1) {
     return {
       z: template.z,
       shotsPerPoint: template.shotsPerPoint,
-      maxValue: 32 + index * 10,
+      maxValue: 24 + index * 7,
       left,
       right,
     };
