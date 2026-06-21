@@ -63,6 +63,7 @@ const DEBUG_FLAGS = {
 };
 const DEBUG_NO_ENEMIES = DEBUG_FLAGS.has("noEnemies");
 const DEBUG_NO_EFFECTS = DEBUG_FLAGS.has("noEffects");
+const DEBUG_NO_ASSETS = DEBUG_FLAGS.has("noAssets");
 const DEBUG_NO_ARMY = DEBUG_FLAGS.has("noArmy");
 const DEBUG_NO_PROJECTILES = DEBUG_FLAGS.has("noProjectiles");
 const DEBUG_NO_PHYSICS = DEBUG_FLAGS.has("noPhysics");
@@ -75,10 +76,13 @@ const DEBUG_BOSS_PIN = DEBUG_FLAGS.has("bossPin");
 const DEBUG_ENEMY_RUSH = DEBUG_FLAGS.has("enemyRush");
 const DEBUG_AUTO_PILOT = DEBUG_FLAGS.has("autoPilot");
 const MAX_BOSS_PROJECTILES = 36;
-const BOSS_MAX_HEALTH = 98;
+const BOSS_MAX_HEALTH = 60;
 const BOOT_MIN_DURATION = 720;
 const INTRO_DURATION = 920;
 const FEEDBACK_COLOR_ATTRIBUTE = "instanceFeedback";
+
+const createRunSeed = () =>
+  Math.floor(performance.now() * 1000) + Math.floor(Math.random() * 1000000);
 const FEEDBACK_GREY_ATTRIBUTE = "instanceGrey";
 const IS_SINGLE_FILE_BUILD = import.meta.env.BASE_URL === "./";
 const assetUrl = (path) => {
@@ -2239,7 +2243,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
   const getBossProjectileTarget = () => {
     const frontUnit = armyUnits.current
       .filter((unit) => unit.active && !unit.dying && unit.scale > 0.45)
-      .sort((a, b) => b.z - a.z)[0];
+      .sort((a, b) => a.z - b.z)[0];
     if (!frontUnit) {
       return { x: playerX.current, z: 3.05, source: "aircraft" };
     }
@@ -2268,7 +2272,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     projectile.life = 2.6;
     projectile.targetX = targetX;
     projectile.targetZ = target.z;
-    const radius = 0.74 + (BOSS_MAX_HEALTH - bossHealth.current) * 0.0023;
+    const radius = 0.58 + (BOSS_MAX_HEALTH - bossHealth.current) * 0.0018;
     projectile.radius = radius;
     projectile.spawnedAt = time;
     bossAttackAt.current = time;
@@ -2277,6 +2281,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       radius: Number(radius.toFixed(2)),
       targetSource: target.source,
       targetUnit: target.unitId ?? null,
+      targetZ: Number(target.z.toFixed(2)),
     });
     onEvent({ type: "boss-fire" });
   };
@@ -2316,7 +2321,12 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     );
     if (nextGateIndex >= 0) {
       const gateDistance = gates[nextGateIndex].z - distance.current;
-      if (gateDistance < 34) return PLAYER_LIMIT * 0.82;
+      if (gateDistance < 34) {
+        const gateState = gateStates.current[nextGateIndex];
+        const targetSide =
+          gateState.leftValue >= gateState.rightValue ? -1 : 1;
+        return PLAYER_LIMIT * 0.82 * targetSide;
+      }
     }
     const activeWaveIndex = WAVES.findIndex((_, index) => {
       const waveState = waveStates.current[index];
@@ -3062,7 +3072,9 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       });
       if (import.meta.env.DEV) {
         window.__SKYLINE_DEBUG__ = {
+          status,
           playerX: playerX.current,
+          runSeed,
           distance: distance.current,
           troops: troops.current,
           combo: combo.current,
@@ -3126,7 +3138,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
 
   return (
     <>
-      <SkyEnvironment />
+      {!DEBUG_NO_ASSETS && <SkyEnvironment />}
       <fog attach="fog" args={["#c9f2f5", 48, 132]} />
       <ambientLight intensity={0.36} color="#c8f7ff" />
       <hemisphereLight args={["#dfffff", "#075b79", 0.82]} />
@@ -3522,8 +3534,9 @@ export function App() {
   }, [status, worldReady]);
 
   const start = () => {
-    const shouldResetWorld = status !== "menu";
     playTone(520, 0.1, "triangle", 0.035);
+    clearTimeout(introTimer.current);
+    setRunId(createRunSeed());
     setData({
       troops: STARTING_TROOPS,
       visibleTroops: STARTING_TROOPS,
@@ -3538,8 +3551,6 @@ export function App() {
     });
     setIsRecord(false);
     setFlash(null);
-    clearTimeout(introTimer.current);
-    if (shouldResetWorld) setRunId((value) => value + 1);
     setStatus("intro");
     introTimer.current = setTimeout(() => setStatus("playing"), INTRO_DURATION);
   };

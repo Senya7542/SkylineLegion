@@ -16,6 +16,34 @@
   - `output/playwright/v3-victory.png`
 - Tested states: menu, gate charging, wave combat, pause/resume, muted audio, drone upgrade, Boss combat, victory, replay, local high score.
 
+## v5.6 restart, first-run gates, softer values and Boss pacing verification
+
+- Source feedback: user requested first-run gate side randomization, softer second-area values, Boss targeting the nearest/front troop, smaller Boss AoE, and a reliable pause/restart flow.
+- Implementation URL: `http://127.0.0.1:4180/`
+- Automated verification screenshot: `output/playwright/v5.6-autopilot.png`.
+
+### Findings and patches
+
+- [Fixed P1] First play used the default run seed, so the first blue/reward gate side felt fixed until restart. Starting a run now generates a fresh seed every time, including from the menu.
+- [Fixed P1] Pause -> continue -> restart could leave validation paths looking stale. Start now clears the intro timer, remounts the world with a fresh seed, and debug telemetry exposes `status` and `runSeed`.
+- [Fixed P1] Boss projectiles were targeting the rear of the troop cluster. Target selection now sorts by the lower troop `z`, which is nearest to the Boss/front line in the current coordinate system.
+- [Fixed P2] Second-region values were too extreme for the requested pacing. Gate templates now start around `-9..-5 / +12..+18`, with later values reduced and the final pair allowed to be red/red.
+- [Fixed P2] Boss still took too long after the AoE change. Boss health is now `60`, projectile radius is about `0.59..0.68`, and the final wave was reduced to `96` enemies so the run can reach a short final encounter.
+
+### Verification
+
+- Production build: passed. Vite still reports the existing large vendor chunk warning.
+- Pause/restart regression: passed. First run seed `4125277`, restart seed `7408806`; gate layout changed, first gate resolved after restart, and enemy hits resumed after restart.
+- Complete auto-pilot run: passed with `MISSION COMPLETE`, Boss duration `10.18s`, Boss start troops `42`, final troops `10`.
+- Boss projectile telemetry: passed. Five Boss volleys recorded `targetSource: front-troop`, target `z` around `1.96..2.40`, and AoE losses of `3..5` troops per shell.
+- Browser runtime errors: none. Remaining console warning is the existing Three.js `Clock` deprecation warning.
+
+### Follow-up polish
+
+- P2: add player-readable danger telegraphs that make dodging Boss shells feel intentional instead of purely punitive.
+- P2: tune enemy cleanup around the Boss threshold, because a clean run can enter Boss while a few late-wave enemies remain alive.
+- P3: expose a simple in-game balance overlay for seeds, gate values and Boss duration so future tuning can be faster.
+
 ## Full-view comparison evidence
 
 The revised implementation preserves the selected concept's portrait composition, bright sci-fi island setting, suspended white causeway, cyan energy gates, turquoise ocean, compact HUD and expanding formation. Real-time geometry remains intentionally simpler than the concept render, but the game now maintains clear depth, readable lane choices and a stable player silhouette throughout the complete run.
