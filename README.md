@@ -4,7 +4,8 @@
 
 ## 在线试玩
 
-- GitHub Pages：<https://senya7542.github.io/SkylineLegion/>
+- 稳定试玩地址：<https://senya7542.github.io/SkylineLegion/>
+- 如果刚推送后看到旧版本或黑屏缓存，可以强制刷新，或临时打开：<https://senya7542.github.io/SkylineLegion/?v=latest>
 
 首次启用 Pages 或每次推送新版本后，GitHub Actions 通常需要几十秒到几分钟完成构建部署。
 
