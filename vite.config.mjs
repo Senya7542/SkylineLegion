@@ -6,6 +6,16 @@ const base = process.env.GITHUB_ACTIONS && repositoryName ? `/${repositoryName}/
 
 export default defineConfig({
   base,
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules")) return "vendor";
+          return undefined;
+        },
+      },
+    },
+  },
   optimizeDeps: {
     include: ["react", "react-dom/client"],
   },

@@ -211,7 +211,7 @@ final result: passed
 ## v5.1 gate-hit accounting, v5 camera backdrop and procedural mech kit verification
 
 - Source feedback: user reported gate values barely grew despite many bullets, suspected the gate should count received bullet hits rather than per-shooter cadence; also reported final-region bullets passing through enemies/Boss. User then requested autonomous overnight polish for the new generated background and procedural low-poly character/Boss style.
-- Generated background asset: `src/assets/skyline-backdrop-v3.png`.
+- Generated background asset: `docs/reference/skyline-backdrop-v3-source.png`; runtime WebP: `src/assets/skyline-backdrop-v3.webp`.
 - Generated character reference: `docs/reference/lowpoly-unit-style-v1.png`.
 - Active gameplay screenshot evidence: `.playwright-cli/page-2026-06-20T19-19-11-751Z.png`.
 - Boss visual screenshot evidence: `.playwright-cli/page-2026-06-20T19-37-51-855Z.png`.
@@ -221,7 +221,7 @@ final result: passed
 - [Fixed P1] Gate growth was throttled by a `chargePower` cadence layer, so many visible bullets hit gates without changing values. This layer was removed. Gate value growth now belongs to the gate: every normal bullet hit contributes `1`, heavy shots contribute `2`.
 - [Fixed P1] Later gate thresholds made the game feel too punishing after the visual-fire change. All gate templates now use `shotsPerPoint: 1`, matching the requested "one bullet equals one increment" test tuning.
 - [Fixed P1] Boss collision depended on `bullet.phase === "boss"`, so bullets could visually pass through Boss if the run state was still wave/gate flavored when Boss was active. Boss collision now checks whenever Boss is active and alive.
-- [Fixed P2] A new backdrop was generated for the v5.0 camera, with a clearer centered ocean/cloud corridor and horizon alignment for the glass runway. Runtime CSS now uses `skyline-backdrop-v3.png`.
+- [Fixed P2] A new backdrop was generated for the v5.0 camera, with a clearer centered ocean/cloud corridor and horizon alignment for the glass runway. Runtime CSS now uses `skyline-backdrop-v3.webp`.
 - [Fixed P2] A low-poly character style board was generated and saved as a reference asset. Friendly troops gained glowing cyan visors and darker boots; enemy troops gained orange visors and chest cores.
 - [Fixed P2] Boss readability was improved by moving twin cannons and the main weak-point core to the player-facing side, adding a glowing weak-point ring, and reducing the white-hit lerp so the Boss no longer becomes a white blob under sustained fire.
 - [Fixed P3] Debug workflow now supports comma-bundled flags such as `?flags=bossTest,bossPin`, avoiding Windows shell issues with `&`. `bossPin` now locks Boss health and pauses Boss attacks for stable visual QA.
@@ -394,7 +394,7 @@ final result: passed
 - [Fixed P1] Later-area bullets appeared to miss enemies too often. Normal projectile hit radius and heavy-shot steering were increased so side and rear rows are hit more reliably.
 - [Fixed P1] Gate charging was too punishing. Gate thresholds are now region 1 = 1 shot per +1, regions 2/3 = 2 shots per +1, region 4 = 3 shots per +1; heavy cannon counts as 2 shots.
 - [Fixed P1] Boss damage made the game effectively unwinnable after the AoE update. Boss health, projectile radius, hit cap, volley cadence and shockwave cadence were tuned so the boss remains threatening but a clean run can win.
-- [Fixed P2] The sky-sphere background was too blurry for a fixed camera. A portrait fixed-camera backdrop was generated and added as `public/assets/skyline-backdrop-v1.jpg`; the old panorama remains only as low-strength environment lighting.
+- [Fixed P2] The sky-sphere background was too blurry for a fixed camera. A portrait fixed-camera backdrop was generated and added as `docs/reference/skyline-backdrop-v1-source.jpg`; runtime uses `public/assets/skyline-backdrop-v1.webp`; the old panorama remains only as low-strength environment lighting.
 - [Fixed P2] Upgrade yellow and projectiles were not bright enough. Upgrade feedback now completes faster and pushes the shader toward a brighter yellow emission-style peak; bullets use larger additive yellow glows.
 - [Fixed P2] Death grey read too close to black. Player and enemy death grey colors were lifted to lighter grey values.
 
@@ -437,7 +437,7 @@ final result: passed
 - [Fixed P1] HMR/fast reload could race the feedback attributes on the first frame. Instanced feedback attributes are now initialized in layout effects and guarded before writes; the browser verification run reported zero runtime errors after the fix.
 - [Fixed P1] Boss projectile damage was single-target and low-threat. Boss projectiles now telegraph a red impact radius, detonate on the target zone and kill the actual units inside the radius, capped by boss health phase.
 - [Fixed P1] Gate values rose too quickly because every troop volley could charge the gate. Gate combat now uses fewer charge bolts, a slower gate-phase fire cadence, per-region `shotsPerPoint`, and later gates begin more negative while opening their charge window earlier.
-- [Fixed P2] The sky was blurry/dark or visibly cut by a lower seam. A new generated azure panorama was added as `azure-sky-panorama-v2-4k.jpg` plus a 2K compact fallback; background/environment intensity was tuned to avoid overexposure.
+- [Fixed P2] The sky was blurry/dark or visibly cut by a lower seam. A new generated azure panorama was added as source references plus WebP runtime assets `azure-sky-panorama-v2-4k.webp` and `azure-sky-panorama-v2-2k.webp`; background/environment intensity was tuned to avoid overexposure.
 - [Fixed P2] The aircraft/cannon blended into the pale floor. The craft shell and wings now use darker navy/gunmetal surfaces with a gold-emissive cannon muzzle so the weapon silhouette remains readable.
 
 ### Required fidelity surfaces

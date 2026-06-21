@@ -1810,8 +1810,8 @@ function SkyEnvironment() {
   const texture = useLoader(
     THREE.TextureLoader,
     isCompact
-      ? assetUrl("assets/azure-sky-panorama-v2-2k.jpg")
-      : assetUrl("assets/azure-sky-panorama-v2-4k.jpg"),
+      ? assetUrl("assets/azure-sky-panorama-v2-2k.webp")
+      : assetUrl("assets/azure-sky-panorama-v2-4k.webp"),
   );
   useEffect(() => {
     texture.mapping = THREE.EquirectangularReflectionMapping;
@@ -1828,7 +1828,7 @@ function SkyEnvironment() {
 }
 
 function FixedSkyBackdrop() {
-  const texture = useLoader(THREE.TextureLoader, assetUrl("assets/skyline-backdrop-v1.jpg"));
+  const texture = useLoader(THREE.TextureLoader, assetUrl("assets/skyline-backdrop-v1.webp"));
   useEffect(() => {
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 8;

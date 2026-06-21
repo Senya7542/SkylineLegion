@@ -42,7 +42,7 @@ button { font: inherit; }
   max-height: 100vh;
   overflow: hidden;
   background:
-    url("./assets/skyline-backdrop-v3.png") center center / cover no-repeat,
+    url("./assets/skyline-backdrop-v3.webp") center center / cover no-repeat,
     #75d8ee;
   border-right: 1px solid rgba(155, 244, 255, 0.2);
   border-left: 1px solid rgba(155, 244, 255, 0.2);
