@@ -72,6 +72,7 @@ const DEBUG_ENEMY_RUSH = DEBUG_FLAGS.has("enemyRush");
 const MAX_BOSS_PROJECTILES = 36;
 const FEEDBACK_COLOR_ATTRIBUTE = "instanceFeedback";
 const FEEDBACK_GREY_ATTRIBUTE = "instanceGrey";
+const assetUrl = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
 
 function setupFeedbackAttributes(mesh, count) {
   if (!mesh?.geometry) return;
@@ -1771,8 +1772,8 @@ function SkyEnvironment() {
   const texture = useLoader(
     THREE.TextureLoader,
     isCompact
-      ? "/assets/azure-sky-panorama-v2-2k.jpg"
-      : "/assets/azure-sky-panorama-v2-4k.jpg",
+      ? assetUrl("assets/azure-sky-panorama-v2-2k.jpg")
+      : assetUrl("assets/azure-sky-panorama-v2-4k.jpg"),
   );
   useEffect(() => {
     texture.mapping = THREE.EquirectangularReflectionMapping;
@@ -1789,7 +1790,7 @@ function SkyEnvironment() {
 }
 
 function FixedSkyBackdrop() {
-  const texture = useLoader(THREE.TextureLoader, "/assets/skyline-backdrop-v1.jpg");
+  const texture = useLoader(THREE.TextureLoader, assetUrl("assets/skyline-backdrop-v1.jpg"));
   useEffect(() => {
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 8;
