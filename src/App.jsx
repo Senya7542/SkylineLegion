@@ -71,6 +71,7 @@ const DEBUG_START_AT = Number(DEBUG_FLAGS.get("startAt")) || 0;
 const DEBUG_BOSS_TEST = DEBUG_FLAGS.has("bossTest");
 const DEBUG_BOSS_PIN = DEBUG_FLAGS.has("bossPin");
 const DEBUG_ENEMY_RUSH = DEBUG_FLAGS.has("enemyRush");
+const DEBUG_AUTO_PILOT = DEBUG_FLAGS.has("autoPilot");
 const MAX_BOSS_PROJECTILES = 36;
 const BOOT_MIN_DURATION = 720;
 const INTRO_DURATION = 920;
@@ -2089,6 +2090,9 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
   const lastPlayerDeath = useRef(null);
   const movementSamples = useRef([]);
   const fpsCounter = useRef({ frames: 0, elapsed: 0, value: 0 });
+  const balanceLog = useRef([]);
+  const bossStartedAt = useRef(null);
+  const bossStartTroops = useRef(0);
 
   useEffect(() => {
     let frame = 0;
@@ -2253,6 +2257,63 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     onEvent({ type: "boss-fire" });
   };
 
+  const recordBalanceEvent = (type, time, payload = {}) => {
+    if (!import.meta.env.DEV) return;
+    balanceLog.current.push({
+      type,
+      time: Number(time.toFixed(2)),
+      distance: Number(distance.current.toFixed(2)),
+      troops: troops.current,
+      combo: combo.current,
+      bossHealth: Number(bossHealth.current.toFixed(1)),
+      ...payload,
+    });
+    if (balanceLog.current.length > 120) balanceLog.current.shift();
+  };
+
+  const recordLoss = (time, reason) => {
+    recordBalanceEvent("lost", time, {
+      reason,
+      bossDuration:
+        bossStartedAt.current == null
+          ? 0
+          : Number((time - bossStartedAt.current).toFixed(2)),
+      bossStartTroops: bossStartTroops.current,
+    });
+  };
+
+  const getAutoPilotTargetX = () => {
+    const nextGateIndex = gates.findIndex(
+      (_, index) => !gateStates.current[index].resolved,
+    );
+    if (nextGateIndex >= 0) {
+      const gateState = gateStates.current[nextGateIndex];
+      const leftScore = gateState.leftValue;
+      const rightScore = gateState.rightValue;
+      return leftScore > rightScore ? -PLAYER_LIMIT * 0.82 : PLAYER_LIMIT * 0.82;
+    }
+    const activeWaveIndex = WAVES.findIndex((_, index) => {
+      const waveState = waveStates.current[index];
+      return (
+        waveState.unlocked &&
+        waveEnemies.current[index].some((enemy) => enemy.alive)
+      );
+    });
+    if (activeWaveIndex >= 0) {
+      const alive = waveEnemies.current[activeWaveIndex].filter(
+        (enemy) => enemy.alive,
+      );
+      const averageX =
+        alive.reduce((sum, enemy) => sum + enemy.currentX, 0) /
+        Math.max(1, alive.length);
+      return clamp(averageX * 0.72, -PLAYER_LIMIT, PLAYER_LIMIT);
+    }
+    if (bossActive.current) {
+      return Math.sin(performance.now() / 520) * PLAYER_LIMIT * 0.72;
+    }
+    return 0;
+  };
+
   useEffect(() => {
     const movePointer = (event) => {
       const rect = gl.domElement.getBoundingClientRect();
@@ -2313,9 +2374,11 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       fpsCounter.current.elapsed = 0;
     }
     const playing = status === "playing" && !finished.current;
-    let targetX = pointerTargetX.current;
-    if (keyboard.current.left) targetX = -PLAYER_LIMIT;
-    if (keyboard.current.right) targetX = PLAYER_LIMIT;
+    let targetX = DEBUG_AUTO_PILOT
+      ? getAutoPilotTargetX()
+      : pointerTargetX.current;
+    if (!DEBUG_AUTO_PILOT && keyboard.current.left) targetX = -PLAYER_LIMIT;
+    if (!DEBUG_AUTO_PILOT && keyboard.current.right) targetX = PLAYER_LIMIT;
     if (playing) {
       playerX.current = THREE.MathUtils.damp(
         playerX.current,
@@ -2680,8 +2743,18 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
             troops: troops.current,
             combo: combo.current,
           });
+          recordBalanceEvent("gate", state.clock.elapsedTime, {
+            gateIndex: index,
+            side,
+            value,
+            leftValue: gateState.leftValue,
+            rightValue: gateState.rightValue,
+            previousTroops,
+            resultTroops: troops.current,
+          });
           if (troops.current <= 0 && !finished.current) {
             finished.current = true;
+            recordLoss(state.clock.elapsedTime, "gate");
             onEvent({ type: "lost" });
           }
         }
@@ -2758,6 +2831,12 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
             clearedWaves.current.add(index);
             combo.current += 1;
             onEvent({ type: "wave-clear", combo: combo.current });
+            recordBalanceEvent("wave-clear", state.clock.elapsedTime, {
+              waveIndex: index,
+              aliveByWave: waveEnemies.current.map(
+                (wave) => wave.filter((enemy) => enemy.alive).length,
+              ),
+            });
           }
         });
 
@@ -2768,14 +2847,28 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
             losses: contactLosses,
             troops: troops.current,
           });
+          recordBalanceEvent("wave-hit", state.clock.elapsedTime, {
+            losses: contactLosses,
+            aliveByWave: waveEnemies.current.map(
+              (wave) => wave.filter((enemy) => enemy.alive).length,
+            ),
+          });
         }
         if (troops.current <= 0 && !finished.current) {
           finished.current = true;
+          recordLoss(state.clock.elapsedTime, "wave-contact");
           onEvent({ type: "lost" });
         }
       }
 
       if (distance.current >= TRACK_END && troops.current > 0) {
+        if (!bossActive.current) {
+          bossStartedAt.current = state.clock.elapsedTime;
+          bossStartTroops.current = troops.current;
+          recordBalanceEvent("boss-start", state.clock.elapsedTime, {
+            bossStartTroops: troops.current,
+          });
+        }
         bossActive.current = true;
         const bossZ = distance.current - BOSS_Z + bossAdvance.current;
         if (bossHealth.current > 0) {
@@ -2883,6 +2976,16 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
 
         if (!DEBUG_BOSS_PIN && bossHealth.current <= 0 && !finished.current) {
           finished.current = true;
+          recordBalanceEvent("won", state.clock.elapsedTime, {
+            bossDuration:
+              bossStartedAt.current == null
+                ? 0
+                : Number(
+                    (state.clock.elapsedTime - bossStartedAt.current).toFixed(2),
+                  ),
+            bossStartTroops: bossStartTroops.current,
+            finalTroops: troops.current,
+          });
           onEvent({
             type: "won",
             troops: troops.current,
@@ -2894,6 +2997,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           });
         } else if (troops.current <= 0 && !finished.current) {
           finished.current = true;
+          recordLoss(state.clock.elapsedTime, "boss");
           onEvent({ type: "lost" });
         }
       }
@@ -2936,6 +3040,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           activeHeavyBullets: bullets.current.filter(
             (bullet) => bullet.active && bullet.heavy,
           ).length,
+          balanceLog: [...balanceLog.current],
           armyBounds: armyUnits.current
             .filter((unit) => unit.active)
             .reduce(
