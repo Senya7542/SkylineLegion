@@ -16,6 +16,34 @@
   - `output/playwright/v3-victory.png`
 - Tested states: menu, gate charging, wave combat, pause/resume, muted audio, drone upgrade, Boss combat, victory, replay, local high score.
 
+## v5.7 projectile density, physical collision, debug panel and player AoE verification
+
+- Source feedback: user reported that projectile lanes felt fake and too sparse, restart runs could pass later gates and then bullets would appear to miss enemies/gates, requested a live tuning panel, and asked for player aircraft shells to use AoE damage.
+- Implementation URL: `http://127.0.0.1:4180/`
+- Automated verification screenshot: `output/playwright/v5.7-autopilot.png`.
+
+### Findings and patches
+
+- [Fixed P1] Normal volleys capped visible shooters to a small lane sample. Every visible ready soldier now emits a projectile, while each bullet carries a `power` value so weak visual rounds do not explode combat math.
+- [Fixed P1] Bullet collision was gated by spawn-time `phase/regionIndex`. If an old wave had stragglers, later gates/enemies could look like they were being ignored. Collision now checks physical swept intersections against unresolved gates, unlocked enemies and Boss, independent of stale phase tags.
+- [Fixed P1] Combat stage selection used the oldest uncleared wave, so aim/debug state could stick to an old region. Stage selection now follows the current/highest active region and reports Boss after `TRACK_END`.
+- [Fixed P2] Player heavy cannon splash was a small nearby-enemy special case. It now uses a radius query similar to Boss shell damage and records `player-heavy-splash` telemetry.
+- [Fixed P2] Added a dev-only live panel with status, seed, stage, distance, troop count, visible units, shooter count, bullet power buckets, gate values, wave counts, Boss HP/duration and last hit.
+
+### Verification
+
+- Logic tests: `node --test tests/combatLogic.test.mjs` passed `6/6`.
+- Production build: passed. Vite still reports the existing large vendor chunk warning.
+- Restart/later-area browser regression: passed. After pause/restart and fourth gate, debug showed `wave #4`, `128` shooters and `449` active bullets, with enemy hits still updating.
+- Complete auto-pilot run: passed with `MISSION COMPLETE`, Boss duration `7.52s`, Boss start troops `66`, final troops `50`, and no browser runtime errors.
+- Player heavy splash telemetry: recorded `14` splash events in the full run.
+
+### Follow-up polish
+
+- P2: tune gate charge rates after hands-on play, because the new visual-fire system makes the game feel much better but will shift preferred door values.
+- P2: add a small warning/reticle improvement for both player heavy shell splash and Boss shell splash so AoE reads more clearly.
+- P3: consider making the dev panel collapsible if it gets in the way during longer manual tuning sessions.
+
 ## v5.6 restart, first-run gates, softer values and Boss pacing verification
 
 - Source feedback: user requested first-run gate side randomization, softer second-area values, Boss targeting the nearest/front troop, smaller Boss AoE, and a reliable pause/restart flow.

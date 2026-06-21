@@ -45,6 +45,12 @@ import {
   killArmyUnits,
   updateArmyUnits,
 } from "./gameSystems.js";
+import {
+  findBulletCollisionTarget,
+  findEnemySplashTargets,
+  getCombatStageSnapshot,
+  getVolleyShooterPlan,
+} from "./combatLogic.js";
 import { ENTITY_VISUALS } from "./entityVisuals.js";
 
 const DEBUG_PARAMS =
@@ -76,7 +82,8 @@ const DEBUG_BOSS_PIN = DEBUG_FLAGS.has("bossPin");
 const DEBUG_ENEMY_RUSH = DEBUG_FLAGS.has("enemyRush");
 const DEBUG_AUTO_PILOT = DEBUG_FLAGS.has("autoPilot");
 const MAX_BOSS_PROJECTILES = 36;
-const BOSS_MAX_HEALTH = 60;
+const BOSS_MAX_HEALTH = 76;
+const PLAYER_HEAVY_SPLASH_RADIUS = 0.82;
 const BOOT_MIN_DURATION = 720;
 const INTRO_DURATION = 920;
 const FEEDBACK_COLOR_ATTRIBUTE = "instanceFeedback";
@@ -2042,6 +2049,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       vx: 0,
       rapid: false,
       heavy: false,
+      power: 1,
       shooter: 0,
       regionIndex: 0,
       phase: "gate",
@@ -2116,29 +2124,16 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     return () => cancelAnimationFrame(animationFrame);
   }, [onReady]);
 
-  const getCombatStage = () => {
-    const regionIndex = WAVES.findIndex(
-      (_, index) => !clearedWaves.current.has(index),
-    );
-    if (regionIndex < 0) return { regionIndex: WAVES.length, phase: "boss" };
-    const gateDistance = gates[regionIndex].z - distance.current;
-    return {
-      regionIndex,
-      phase: gateStates.current[regionIndex].resolved
-        ? "wave"
-        : gateDistance <= 27 + regionIndex * 9
-          ? "gate"
-          : "travel",
-    };
-  };
-
-  const getGateIndexForBullet = (bullet) => {
-    if (bullet.phase === "wave") {
-      return bullet.regionIndex + 1 < gates.length ? bullet.regionIndex + 1 : null;
-    }
-    if (bullet.phase === "gate") return bullet.regionIndex;
-    return null;
-  };
+  const getCombatStage = () =>
+    getCombatStageSnapshot({
+      distance: distance.current,
+      trackEnd: TRACK_END,
+      gates,
+      gateStates: gateStates.current,
+      waves: WAVES,
+      waveStates: waveStates.current,
+      waveEnemies: waveEnemies.current,
+    });
 
   const spawnImpact = (x, y, z, color, duration = 0.24, size = 1) => {
     const impact =
@@ -2164,15 +2159,14 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       (unit) => unit.active && !unit.dying && unit.scale > 0.72,
     );
     if (!activeShooters.length) return;
-    const count = clamp(1 + Math.floor((troops.current - 1) / 20), 1, rapid ? 10 : 8);
-    const sorted = [...activeShooters].sort((a, b) => a.x - b.x);
-    const shooterIndices = Array.from({ length: count }, (_, index) =>
-      Math.round((index / Math.max(1, count - 1)) * (sorted.length - 1)),
+    const shooterPlan = getVolleyShooterPlan(
+      activeShooters,
+      troops.current,
+      rapid,
     );
-    shooterIndices.forEach((shooterIndex, index) => {
+    shooterPlan.forEach(({ shooter, power }, index) => {
       const bullet = bullets.current.find((item) => !item.active);
       if (!bullet) return;
-      const shooter = sorted[shooterIndex];
       const shooterX = playerX.current + shooter.x + 0.08;
       const target = chooseEnemyTarget(
         waveEnemies.current,
@@ -2191,12 +2185,13 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
         : 0;
       bullet.rapid = rapid;
       bullet.heavy = false;
+      bullet.power = power;
       bullet.shooter = shooter.index;
       bullet.regionIndex = stage.regionIndex;
       bullet.phase = stage.phase;
-      bullet.life = stage.phase === "travel" ? 0.48 : 2.6;
+      bullet.life = stage.phase === "travel" ? 0.92 : rapid ? 1.12 : 1.34;
     });
-    const muzzle = sorted[Math.floor(sorted.length / 2)];
+    const muzzle = activeShooters[Math.floor(activeShooters.length / 2)];
     if (muzzle) {
       spawnImpact(
         playerX.current + muzzle.x,
@@ -2231,10 +2226,11 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       : 0;
     bullet.rapid = false;
     bullet.heavy = true;
+    bullet.power = 3.2;
     bullet.shooter = -1;
     bullet.regionIndex = stage.regionIndex;
     bullet.phase = stage.phase;
-    bullet.life = stage.phase === "travel" ? 0.48 : 2.8;
+    bullet.life = stage.phase === "travel" ? 1.05 : 1.75;
     cannonPulse.current = time;
     spawnImpact(playerX.current, 0.83, 3.08, "#fff16a", 0.2, 1.25);
     onEvent({ type: "shoot", heavy: true });
@@ -2314,6 +2310,45 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
 
   const getBossHealthPercent = () =>
     clamp((bossHealth.current / BOSS_MAX_HEALTH) * 100, 0, 100);
+
+  const alertWave = (waveIndex, time) => {
+    const waveState = waveStates.current[waveIndex];
+    if (!waveState || waveState.alerted) return;
+    waveState.alerted = true;
+    waveState.alertedAt = time;
+    onEvent({ type: "wave-alert" });
+  };
+
+  const killEnemyFromProjectile = (
+    enemy,
+    waveIndex,
+    impactX,
+    impactZ,
+    time,
+    blastScale = 1,
+  ) => {
+    if (!enemy.alive) return;
+    enemy.alive = false;
+    enemy.deathAt = time;
+    const horizontal = clamp((enemy.currentX - impactX) * 3, -1.8, 1.8);
+    enemy.vx =
+      (horizontal + (enemy.currentX >= impactX ? 0.65 : -0.65)) *
+      1.45 *
+      blastScale;
+    enemy.vy = 3.7 + Math.random() * 1.1 + (blastScale - 1) * 0.5;
+    enemy.vz = (-3.4 - Math.random() * 1.4 - Math.max(0, impactZ) * 0.05) * blastScale;
+    enemy.spinX = 5 + Math.random() * 5;
+    enemy.spinY = 5 + Math.random() * 6;
+    enemy.spinZ = (enemy.currentX >= impactX ? -1 : 1) * (6 + Math.random() * 5);
+    const remaining = waveEnemies.current[waveIndex].some(
+      (unit) => unit.alive,
+    );
+    if (!remaining && !clearedWaves.current.has(waveIndex)) {
+      clearedWaves.current.add(waveIndex);
+      combo.current += 1;
+      onEvent({ type: "wave-clear", combo: combo.current });
+    }
+  };
 
   const getAutoPilotTargetX = () => {
     const nextGateIndex = gates.findIndex(
@@ -2488,7 +2523,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
         heavyShotTimer.current -= delta;
         if (shotTimer.current <= 0) {
           spawnVolley(rapidRef.current);
-          shotTimer.current = rapidRef.current ? 0.065 : 0.125;
+          shotTimer.current = rapidRef.current ? 0.11 : 0.18;
         }
         if (heavyShotTimer.current <= 0) {
           spawnHeavyShot(state.clock.elapsedTime);
@@ -2510,70 +2545,24 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
         const targetY = bullet.heavy ? 0.82 : bullet.y;
         bullet.y = THREE.MathUtils.damp(bullet.y, targetY, 4.5, delta);
         const collisionX = (oldX + nextX) * 0.5;
-        let target = null;
-        let targetZ = -Infinity;
-
-        gates.forEach((gate, gateIndex) => {
-          if (
-            gateIndex !== getGateIndexForBullet(bullet)
-          ) return;
-          const gateState = gateStates.current[gateIndex];
-          if (gateState.resolved) return;
-          const z = distance.current - gate.z;
-          const side = collisionX < 0 ? "left" : "right";
-          const laneCenter = side === "left" ? -LANE_X : LANE_X;
-          if (
-            z <= oldZ + 0.12 &&
-            z >= nextZ - 0.12 &&
-            Math.abs(collisionX - laneCenter) <= 1.18 &&
-            z > targetZ
-          ) {
-            target = { type: "gate", gateIndex, side, z };
-            targetZ = z;
-          }
+        const target = findBulletCollisionTarget({
+          bullet,
+          oldZ,
+          nextZ,
+          collisionX,
+          distance: distance.current,
+          laneX: LANE_X,
+          gates,
+          gateStates: gateStates.current,
+          waves: WAVES,
+          waveStates: waveStates.current,
+          waveEnemies: DEBUG_NO_ENEMIES ? [] : waveEnemies.current,
+          boss: {
+            active: bossActive.current,
+            health: bossHealth.current,
+            z: distance.current - BOSS_Z + bossAdvance.current,
+          },
         });
-
-        if (!DEBUG_NO_ENEMIES) WAVES.forEach((wave, waveIndex) => {
-          if (
-            bullet.phase !== "wave" ||
-            waveIndex !== bullet.regionIndex ||
-            !waveStates.current[waveIndex].unlocked
-          ) return;
-          waveEnemies.current[waveIndex].forEach((enemy) => {
-            if (!enemy.alive) return;
-            const z =
-              distance.current -
-              wave.z -
-              enemy.zOffset +
-              waveStates.current[waveIndex].advance;
-            const hitRadius = bullet.heavy ? 0.64 : 0.42;
-            const zTolerance = bullet.heavy ? 0.34 : 0.24;
-            if (
-              z <= oldZ + zTolerance &&
-              z >= nextZ - zTolerance &&
-              Math.abs(collisionX - enemy.currentX) <= hitRadius &&
-              z > targetZ
-            ) {
-              target = { type: "enemy", waveIndex, enemy, z };
-              targetZ = z;
-            }
-          });
-        });
-
-        if (
-          bossActive.current &&
-          bossHealth.current > 0
-        ) {
-          const z = distance.current - BOSS_Z + bossAdvance.current;
-          if (
-            z <= oldZ + 0.35 &&
-            z >= nextZ - 0.35 &&
-            Math.abs(collisionX) <= 2.15 &&
-            z > targetZ
-          ) {
-            target = { type: "boss", z };
-          }
-        }
 
         if (!target) {
           bullet.z = nextZ;
@@ -2588,7 +2577,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           const gate = gates[target.gateIndex];
           const valueKey = `${target.side}Value`;
           const chargeKey = `${target.side}Charge`;
-          const chargeWeight = bullet.heavy ? 2 : 1;
+          const chargeWeight = bullet.heavy ? 2.6 : bullet.power ?? 1;
           gateState[chargeKey] += chargeWeight;
           let increase = 0;
           while (gateState[chargeKey] >= gate.shotsPerPoint) {
@@ -2623,90 +2612,104 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
         }
 
         if (target.type === "enemy") {
+          const time = state.clock.elapsedTime;
           const enemy = target.enemy;
-          enemy.hp -= bullet.heavy ? 3 : 1;
-          enemy.hitAt = state.clock.elapsedTime;
-          const waveState = waveStates.current[target.waveIndex];
-          if (!waveState.alerted) {
-            waveState.alerted = true;
-            waveState.alertedAt = state.clock.elapsedTime;
-            onEvent({ type: "wave-alert" });
-          }
+          alertWave(target.waveIndex, time);
           lastHit.current = {
             type: "enemy",
             enemyId: enemy.id,
             enemyX: enemy.currentX,
             bulletX: collisionX,
-            at: state.clock.elapsedTime,
+            at: time,
           };
           lastEnemyHit.current = lastHit.current;
+          if (bullet.heavy) {
+            const splashTargets =
+              findEnemySplashTargets({
+                waveEnemies: waveEnemies.current,
+                waveStates: waveStates.current,
+                distance: distance.current,
+                centerX: collisionX,
+                centerZ: target.z,
+                radius: PLAYER_HEAVY_SPLASH_RADIUS,
+              }).slice(0, 14);
+            const victims = splashTargets.length
+              ? splashTargets
+              : [{ enemy, waveIndex: target.waveIndex, z: target.z, distance: 0 }];
+            let killed = 0;
+            victims.forEach((entry) => {
+              alertWave(entry.waveIndex, time);
+              const damage = entry.enemy === enemy ? bullet.power : 2.05;
+              entry.enemy.hp -= damage;
+              entry.enemy.hitAt = time;
+              if (entry.enemy.hp <= 0 && entry.enemy.alive) {
+                killed += 1;
+                killEnemyFromProjectile(
+                  entry.enemy,
+                  entry.waveIndex,
+                  collisionX,
+                  entry.z,
+                  time,
+                  1.22,
+                );
+              }
+            });
+            spawnImpact(
+              collisionX,
+              bullet.y,
+              target.z - 0.08,
+              "#fff16a",
+              0.38,
+              PLAYER_HEAVY_SPLASH_RADIUS * 2.65,
+            );
+            recordBalanceEvent("player-heavy-splash", time, {
+              victims: victims.length,
+              killed,
+              radius: PLAYER_HEAVY_SPLASH_RADIUS,
+            });
+            onEvent({
+              type: "impact",
+              target: "enemy",
+              heavy: true,
+              killed: killed > 0,
+            });
+            return;
+          }
+
+          enemy.hp -= bullet.power ?? 1;
+          enemy.hitAt = time;
           spawnImpact(
             collisionX,
             bullet.y,
             target.z - 0.08,
             "#fff16a",
-            bullet.heavy ? 0.34 : 0.26,
-            bullet.heavy ? 2.1 : 1.2,
+            0.26,
+            bullet.power >= 1 ? 1.2 : 0.62,
           );
           onEvent({
             type: "impact",
             target: "enemy",
-            heavy: bullet.heavy,
+            heavy: false,
             killed: enemy.hp <= 0,
           });
-          if (bullet.heavy) {
-            waveEnemies.current[target.waveIndex].forEach((nearby) => {
-              if (
-                nearby !== enemy &&
-                nearby.alive &&
-                Math.abs(nearby.currentX - enemy.currentX) < 0.72 &&
-                Math.abs(nearby.zOffset - enemy.zOffset) < 0.72
-              ) {
-                nearby.hp -= 1;
-                nearby.hitAt = state.clock.elapsedTime;
-                if (nearby.hp <= 0) {
-                  nearby.alive = false;
-                  nearby.deathAt = state.clock.elapsedTime;
-                  nearby.vx = (nearby.currentX >= enemy.currentX ? 1 : -1) * 2.1;
-                  nearby.vy = 3.5 + Math.random() * 1.0;
-                  nearby.vz = -3.2 - Math.random() * 1.1;
-                  nearby.spinX = 7;
-                  nearby.spinY = 8;
-                  nearby.spinZ = nearby.vx * -5;
-                }
-              }
-            });
-          }
           if (enemy.hp <= 0) {
-            enemy.alive = false;
-            enemy.deathAt = state.clock.elapsedTime;
-            const horizontal = clamp((enemy.currentX - collisionX) * 3, -1.8, 1.8);
-            enemy.vx = (horizontal + (enemy.currentX >= 0 ? 0.65 : -0.65)) * 1.45;
-            enemy.vy = 3.7 + Math.random() * 1.1;
-            enemy.vz = -3.4 - Math.random() * 1.4;
-            enemy.spinX = 5 + Math.random() * 5;
-            enemy.spinY = 5 + Math.random() * 6;
-            enemy.spinZ = (enemy.currentX >= 0 ? -1 : 1) * (6 + Math.random() * 5);
-            const remaining = waveEnemies.current[target.waveIndex].some(
-              (unit) => unit.alive,
+            killEnemyFromProjectile(
+              enemy,
+              target.waveIndex,
+              collisionX,
+              target.z,
+              time,
             );
-            if (
-              !remaining &&
-              !clearedWaves.current.has(target.waveIndex)
-            ) {
-              clearedWaves.current.add(target.waveIndex);
-              combo.current += 1;
-              onEvent({ type: "wave-clear", combo: combo.current });
-            }
           }
           return;
         }
 
         if (!DEBUG_BOSS_PIN) {
+          const damageScale = bullet.heavy ? 1 : bullet.power ?? 1;
           bossHealth.current = Math.max(
             0,
             bossHealth.current -
-              (bullet.heavy ? 2.45 : bullet.rapid ? 0.36 : 0.24),
+              (bullet.heavy ? 2.45 : (bullet.rapid ? 0.36 : 0.24) * damageScale),
           );
         }
         lastHit.current = {
@@ -3059,6 +3062,52 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     uiTimer.current += delta;
     if (uiTimer.current >= 0.1) {
       uiTimer.current = 0;
+      const activeArmyUnits = armyUnits.current.filter(
+        (unit) => unit.active && !unit.dying,
+      );
+      const shooterCount = activeArmyUnits.filter(
+        (unit) => unit.scale > 0.72,
+      ).length;
+      const bulletStats = bullets.current.reduce(
+        (stats, bullet) => {
+          if (!bullet.active) return stats;
+          stats.total += 1;
+          if (bullet.heavy) stats.heavy += 1;
+          if (bullet.power >= 1) stats.power += 1;
+          if (bullet.power > 0 && bullet.power < 1) stats.visual += 1;
+          stats.phases[bullet.phase] = (stats.phases[bullet.phase] || 0) + 1;
+          return stats;
+        },
+        { total: 0, heavy: 0, power: 0, visual: 0, phases: {} },
+      );
+      const stage = getCombatStage();
+      const aliveByWave = waveEnemies.current.map(
+        (wave) => wave.filter((enemy) => enemy.alive).length,
+      );
+      const bossDuration =
+        bossStartedAt.current == null
+          ? 0
+          : state.clock.elapsedTime - bossStartedAt.current;
+      const debugData = import.meta.env.DEV
+        ? {
+            status,
+            runSeed,
+            time: Number(state.clock.elapsedTime.toFixed(2)),
+            distance: Number(distance.current.toFixed(2)),
+            combatStage: stage,
+            troops: troops.current,
+            visibleUnits: activeArmyUnits.length,
+            shooterCount,
+            bulletStats,
+            gateStates: gateStates.current.map((gate) => ({ ...gate })),
+            aliveByWave,
+            bossDuration: Number(Math.max(0, bossDuration).toFixed(2)),
+            bossHp: Number(bossHealth.current.toFixed(1)),
+            bossActive: bossActive.current,
+            lastHit: lastHit.current,
+            lastEnemyHit: lastEnemyHit.current,
+          }
+        : null;
       onFrameData({
         troops: troops.current,
         visibleTroops: Math.min(troops.current, MAX_VISIBLE_TROOPS),
@@ -3069,19 +3118,15 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
         boss: bossActive.current,
         rapid: rapidRef.current,
         drones: drones.current,
+        debugData,
       });
       if (import.meta.env.DEV) {
         window.__SKYLINE_DEBUG__ = {
-          status,
+          ...debugData,
           playerX: playerX.current,
-          runSeed,
-          distance: distance.current,
-          troops: troops.current,
           combo: combo.current,
-          activeBullets: bullets.current.filter((bullet) => bullet.active).length,
-          activeHeavyBullets: bullets.current.filter(
-            (bullet) => bullet.active && bullet.heavy,
-          ).length,
+          activeBullets: bulletStats.total,
+          activeHeavyBullets: bulletStats.heavy,
           balanceLog: [...balanceLog.current],
           armyBounds: armyUnits.current
             .filter((unit) => unit.active)
@@ -3110,10 +3155,6 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
               hitIntensity: unit.debugHitIntensity,
               greyAmount: unit.debugGreyAmount,
             })),
-          gateStates: gateStates.current.map((gate) => ({ ...gate })),
-          aliveByWave: waveEnemies.current.map(
-            (wave) => wave.filter((enemy) => enemy.alive).length,
-          ),
           waveStates: waveStates.current.map((wave) => ({ ...wave })),
           lastPlayerDeath: lastPlayerDeath.current,
           bossAdvance: bossAdvance.current,
@@ -3269,6 +3310,63 @@ function HUD({ data, status, sound, onPause, onSound, onFullscreen }) {
   );
 }
 
+function DevPanel({ data }) {
+  const debug = data.debugData;
+  if (!import.meta.env.DEV || !debug) return null;
+  const gates = debug.gateStates
+    .map(
+      (gate, index) =>
+        `${index + 1}:${gate.leftValue}/${gate.rightValue}${
+          gate.resolved ? ` ${gate.choice || "-"}` : ""
+        }`,
+    )
+    .join("  ");
+  const phases = Object.entries(debug.bulletStats.phases)
+    .map(([phase, count]) => `${phase}:${count}`)
+    .join(" ");
+  const stage = `${debug.combatStage.phase} #${debug.combatStage.regionIndex + 1}`;
+
+  return (
+    <aside className="dev-panel" aria-label="开发数值面板">
+      <div>
+        <b>DEV</b>
+        <span>{debug.status}</span>
+        <span>seed {debug.runSeed}</span>
+      </div>
+      <div>
+        <span>阶段 {stage}</span>
+        <span>距离 {debug.distance}</span>
+        <span>时间 {debug.time}</span>
+      </div>
+      <div>
+        <span>兵 {debug.troops}</span>
+        <span>可见 {debug.visibleUnits}</span>
+        <span>射手 {debug.shooterCount}</span>
+      </div>
+      <div>
+        <span>弹 {debug.bulletStats.total}</span>
+        <span>强 {debug.bulletStats.power}</span>
+        <span>弱 {debug.bulletStats.visual}</span>
+        <span>重 {debug.bulletStats.heavy}</span>
+      </div>
+      <div className="dev-panel-wide">弹阶段 {phases || "-"}</div>
+      <div className="dev-panel-wide">门 {gates}</div>
+      <div className="dev-panel-wide">
+        敌 {debug.aliveByWave.join(" / ")}
+      </div>
+      <div>
+        <span>Boss {debug.bossActive ? "ON" : "OFF"}</span>
+        <span>HP {debug.bossHp}</span>
+        <span>时长 {debug.bossDuration}s</span>
+      </div>
+      <div className="dev-panel-wide">
+        最近命中 {debug.lastHit?.type || "-"} @{" "}
+        {debug.lastHit?.at == null ? "-" : Number(debug.lastHit.at).toFixed(1)}
+      </div>
+    </aside>
+  );
+}
+
 function Intro({ best, onStart }) {
   return (
     <div className="screen intro-screen">
@@ -3376,6 +3474,7 @@ export function App() {
     rapid: false,
     drones: 0,
     score: 0,
+    debugData: null,
   });
   const flashTimer = useRef();
   const introTimer = useRef();
@@ -3548,6 +3647,7 @@ export function App() {
       rapid: false,
       drones: 0,
       score: 0,
+      debugData: null,
     });
     setIsRecord(false);
     setFlash(null);
@@ -3620,6 +3720,7 @@ export function App() {
           onFullscreen={toggleFullscreen}
         />
       )}
+      <DevPanel data={data} />
       {status === "booting" && <LoadingOverlay />}
       {status === "menu" && <Intro best={best} onStart={start} />}
       {status === "paused" && (

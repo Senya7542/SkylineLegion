@@ -217,6 +217,48 @@ button { font: inherit; }
 
 .hud-actions svg { width: 17px; height: 17px; }
 
+.dev-panel {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px 8px;
+  padding: 7px 9px;
+  color: #dfffff;
+  font-size: 9px;
+  line-height: 1.25;
+  letter-spacing: 0;
+  pointer-events: none;
+  background: rgba(2, 22, 34, 0.68);
+  border: 1px solid rgba(150, 245, 255, 0.26);
+  border-radius: 6px;
+  box-shadow: 0 8px 22px rgba(0, 14, 24, 0.34);
+  backdrop-filter: blur(9px);
+}
+
+.dev-panel div {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dev-panel span,
+.dev-panel b {
+  margin-right: 6px;
+}
+
+.dev-panel b {
+  color: #fff37a;
+}
+
+.dev-panel-wide {
+  grid-column: 1 / -1;
+}
+
 .boss-bar {
   position: absolute;
   top: 84px;
