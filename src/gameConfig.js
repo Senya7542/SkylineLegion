@@ -6,19 +6,21 @@ export const PLAYER_GATE_CONTACT_Z = 2.35;
 export const MAX_BULLETS = 128;
 export const MAX_IMPACTS = 40;
 export const MAX_VISIBLE_TROOPS = 128;
+export const STARTING_TROOPS = 1;
+export const GATE_VALUE_CAP = 999;
 
 const GATE_TEMPLATES = [
-  { z: 28, left: [-10, -5], right: [1, 4], shotsPerPoint: 1 },
-  { z: 67, left: [-16, -9], right: [-3, 4], shotsPerPoint: 1 },
-  { z: 108, left: [-26, -16], right: [-9, 3], shotsPerPoint: 1 },
-  { z: 145, left: [-34, -22], right: [-14, 1], shotsPerPoint: 1 },
+  { z: 28, left: [-12, -5], right: [6, 10], shotsPerPoint: 2 },
+  { z: 67, left: [-45, -24], right: [28, 40], shotsPerPoint: 2 },
+  { z: 108, left: [-78, -48], right: [48, 70], shotsPerPoint: 3 },
+  { z: 145, left: [-99, -70], right: [60, 90], shotsPerPoint: 4 },
 ];
 
 export const WAVES = [
-  { z: 54, count: 48, speed: 2.05, gateIndex: 0 },
-  { z: 94, count: 74, speed: 2.32, gateIndex: 1 },
-  { z: 135, count: 104, speed: 2.62, gateIndex: 2 },
-  { z: 166, count: 132, speed: 2.92, gateIndex: 3 },
+  { z: 54, count: 40, speed: 2.05, gateIndex: 0 },
+  { z: 94, count: 60, speed: 2.32, gateIndex: 1 },
+  { z: 135, count: 86, speed: 2.62, gateIndex: 2 },
+  { z: 166, count: 112, speed: 2.92, gateIndex: 3 },
 ];
 
 const seeded = (seed) => {
@@ -41,7 +43,7 @@ export function createGates(runSeed = 1) {
     return {
       z: template.z,
       shotsPerPoint: template.shotsPerPoint,
-      maxValue: 24 + index * 7,
+      maxValue: GATE_VALUE_CAP,
       left,
       right,
     };

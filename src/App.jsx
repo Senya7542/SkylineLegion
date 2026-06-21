@@ -2,6 +2,7 @@ import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Float, Sparkles, Text as DreiText } from "@react-three/drei";
 import {
   ArrowsOutSimple,
+  ArrowCounterClockwise,
   Pause,
   Play,
   SpeakerHigh,
@@ -31,6 +32,7 @@ import {
   MAX_VISIBLE_TROOPS,
   PLAYER_GATE_CONTACT_Z,
   PLAYER_LIMIT,
+  STARTING_TROOPS,
   TRACK_END,
   WAVES,
 } from "./gameConfig.js";
@@ -73,7 +75,7 @@ const DEBUG_BOSS_PIN = DEBUG_FLAGS.has("bossPin");
 const DEBUG_ENEMY_RUSH = DEBUG_FLAGS.has("enemyRush");
 const DEBUG_AUTO_PILOT = DEBUG_FLAGS.has("autoPilot");
 const MAX_BOSS_PROJECTILES = 36;
-const BOSS_MAX_HEALTH = 126;
+const BOSS_MAX_HEALTH = 98;
 const BOOT_MIN_DURATION = 720;
 const INTRO_DURATION = 920;
 const FEEDBACK_COLOR_ATTRIBUTE = "instanceFeedback";
@@ -1986,7 +1988,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
   const playerX = useRef(0);
   const pointerTargetX = useRef(0);
   const distance = useRef(DEBUG_BOSS_TEST ? TRACK_END : DEBUG_START_AT);
-  const troops = useRef(DEBUG_BOSS_TEST ? 80 : DEBUG_ENEMY_RUSH ? 40 : 12);
+  const troops = useRef(DEBUG_BOSS_TEST ? 80 : DEBUG_ENEMY_RUSH ? 40 : STARTING_TROOPS);
   const combo = useRef(1);
   const bossHealth = useRef(BOSS_MAX_HEALTH);
   const rapidUntil = useRef(0);
@@ -2158,7 +2160,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       (unit) => unit.active && !unit.dying && unit.scale > 0.72,
     );
     if (!activeShooters.length) return;
-    const count = clamp(2 + Math.floor(troops.current / 15), 2, rapid ? 10 : 8);
+    const count = clamp(1 + Math.floor((troops.current - 1) / 20), 1, rapid ? 10 : 8);
     const sorted = [...activeShooters].sort((a, b) => a.x - b.x);
     const shooterIndices = Array.from({ length: count }, (_, index) =>
       Math.round((index / Math.max(1, count - 1)) * (sorted.length - 1)),
@@ -2254,7 +2256,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     projectile.life = 2.6;
     projectile.targetX = targetX;
     projectile.targetZ = 3.05;
-    const radius = 1.28 + (BOSS_MAX_HEALTH - bossHealth.current) * 0.0032;
+    const radius = 1.45 + (BOSS_MAX_HEALTH - bossHealth.current) * 0.0046;
     projectile.radius = radius;
     projectile.spawnedAt = time;
     bossAttackAt.current = time;
@@ -2495,6 +2497,13 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           if (gateState.resolved) return;
           const z = distance.current - gate.z;
           const side = collisionX < 0 ? "left" : "right";
+          const chosenSide =
+            playerX.current < -0.16
+              ? "left"
+              : playerX.current > 0.16
+                ? "right"
+                : null;
+          if (side !== chosenSide) return;
           const laneCenter = side === "left" ? -LANE_X : LANE_X;
           if (
             z <= oldZ + 0.12 &&
@@ -2680,7 +2689,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           bossHealth.current = Math.max(
             0,
             bossHealth.current -
-              (bullet.heavy ? 1.5 : bullet.rapid ? 0.21 : 0.135),
+              (bullet.heavy ? 2.45 : bullet.rapid ? 0.36 : 0.24),
           );
         }
         lastHit.current = {
@@ -2937,7 +2946,6 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           }
           if (projectile.z < projectile.targetZ) return;
           projectile.active = false;
-          const maxVictims = getBossHealthPercent() < 35 ? 2 : 1;
           const victims = armyUnits.current
             .filter((unit) => unit.active && !unit.dying && unit.scale > 0.45)
             .map((unit) => {
@@ -2947,8 +2955,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
               return { unit, worldX, distance: Math.hypot(dx, dz), dx, dz };
             })
             .filter((entry) => entry.distance <= projectile.radius)
-            .sort((a, b) => a.distance - b.distance)
-            .slice(0, maxVictims);
+            .sort((a, b) => a.distance - b.distance);
           victims.forEach(({ unit, worldX, dx, dz }) => {
             if (
               killArmyUnit(
@@ -2977,6 +2984,10 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
             projectile.radius * 2.15,
           );
           shake.current = Math.max(shake.current, 0.34);
+          recordBalanceEvent("boss-projectile-hit", state.clock.elapsedTime, {
+            losses: victims.length,
+            radius: Number(projectile.radius.toFixed(2)),
+          });
           onEvent({
             type: "boss-projectile-hit",
             losses: victims.length,
@@ -3336,8 +3347,8 @@ export function App() {
   });
   const [isRecord, setIsRecord] = useState(false);
   const [data, setData] = useState({
-    troops: 12,
-    visibleTroops: 12,
+    troops: STARTING_TROOPS,
+    visibleTroops: STARTING_TROOPS,
     visibleTroopCap: MAX_VISIBLE_TROOPS,
     combo: 1,
     bossHealth: 100,
@@ -3507,8 +3518,8 @@ export function App() {
     const shouldResetWorld = status !== "menu";
     playTone(520, 0.1, "triangle", 0.035);
     setData({
-      troops: 12,
-      visibleTroops: 12,
+      troops: STARTING_TROOPS,
+      visibleTroops: STARTING_TROOPS,
       visibleTroopCap: MAX_VISIBLE_TROOPS,
       combo: 1,
       bossHealth: 100,
@@ -3597,10 +3608,16 @@ export function App() {
         <div className="screen pause-screen">
           <p className="kicker">TACTICAL HOLD</p>
           <h2>突击暂停</h2>
-          <button className="primary-button" onClick={togglePause}>
-            <span>继续战斗</span>
-            <Play weight="fill" />
-          </button>
+          <div className="pause-actions">
+            <button className="primary-button" onClick={togglePause}>
+              <span>继续战斗</span>
+              <Play weight="fill" />
+            </button>
+            <button className="secondary-button" onClick={start}>
+              <span>重新开始</span>
+              <ArrowCounterClockwise weight="bold" />
+            </button>
+          </div>
         </div>
       )}
       {(status === "won" || status === "lost") && (

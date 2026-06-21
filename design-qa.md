@@ -110,6 +110,23 @@ The revised implementation preserves the selected concept's portrait composition
 - Production build passed; remaining build warning is the existing large vendor chunk warning.
 - Evidence screenshot: `F:/Users/Yoru17/Documents/Git项目/SkylineLegion/output/playwright/v5.3-final-autopilot.png`.
 
+## v5.4 core loop, Boss and UI verification
+
+- Start troops changed from `12` to `1`; normal volley count now starts at one lane and scales with troop count.
+- Gate values no longer visibly hit the old small cap; gate value cap is raised to `999` as a background safety guard.
+- Gate charging now requires the player to lean into the matching side. Standing near center does not freely charge both doors.
+- Later wrong-side gates now use heavy negative starts, including ranges `[-78, -48]` and `[-99, -70]`.
+- Enemy wave counts are tuned to `40/60/86/112` for the one-troop opening.
+- Pause overlay now includes both `继续战斗` and `重新开始`; browser verification confirmed both controls render at `390 × 844`.
+- Boss max health is reduced to `98`, and player Boss damage is increased so the encounter ends in roughly 9-10 seconds.
+- Boss projectile remains single-shot per volley, but hit resolution removes every troop inside the blast radius instead of capping losses at one or two.
+- Final two full autoPilot samples both won. Sample 1: peak troops `234`, Boss start `194`, final troops `6`, Boss duration `9.23s`. Sample 2: peak troops `237`, Boss start `197`, final troops `8`, Boss duration `9.09s`.
+- The same samples recorded Boss projectile group hits of `41/48/58/36` and `38/42/56/51`; max single blast loss was `58`.
+- Gate verification samples recorded right-route values around `+32`, `+50/+51`, `+76/+77`, and `+94/+95`, while wrong-side values remained negative.
+- Browser verification reported zero runtime errors. Remaining console warnings are the existing Three.js Clock deprecation and shader precision warnings.
+- Production build passed; remaining build warning is the existing large vendor chunk warning.
+- Evidence screenshots: `F:/Users/Yoru17/Documents/Git项目/SkylineLegion/output/playwright/v5.4-final-autopilot.png`, `F:/Users/Yoru17/Documents/Git项目/SkylineLegion/output/playwright/v5.4-pause-restart.png`.
+
 ## Required fidelity surfaces
 
 - Fonts and typography: system display and Chinese UI fallbacks render consistently without external font requests.
