@@ -208,6 +208,36 @@ The revised implementation preserves the selected concept's portrait composition
 
 final result: passed
 
+## v5.2 难度平衡验证
+
+- Source feedback: v5.1 后倍增门已经按可见子弹命中成长；本轮检查普通流程是否过易，并只做小范围数值平衡。
+- Baseline result: v5.1 autoPilot 基线胜利，4 次右侧过门值为 `+32 / +42 / +52 / +62`，过门后兵力为 `44 / 85 / 137 / 187`，Boss 前 `147` 兵，Boss 战 `5.38` 秒，最终 `123` 兵，wave contact 总损失 `70`，采样 FPS `120`。
+- Tuned result: v5.2 autoPilot 胜利，4 次右侧过门值为 `+24 / +31 / +38 / +45`，过门后兵力为 `36 / 66 / 103 / 135`，Boss 前 `95` 兵，Boss 战 `16.27` 秒，最终 `52` 兵，wave contact 总损失 `73`，采样 FPS `120`。
+
+### Findings and patches
+
+- [Fixed P1] v5.1 基线下 Boss 死得太快，自动驾驶好路线只打了 `5.38` 秒 Boss 战。v5.2 将 Boss 内部血量调到 `126`，并把普通/rapid/重炮对 Boss 伤害调为 `0.135 / 0.21 / 1.5`，让 Boss 战延长到目标窗口内。
+- [Fixed P1] Boss 血量原本同时承担内部数值和 HUD 百分比。v5.2 拆出 `BOSS_MAX_HEALTH`，HUD 继续显示 `0-100%`，调试日志同时记录 `bossHealth` 百分比和 `bossHp` 内部血量。
+- [Fixed P1] 倍增门在 `1 bullet = +1` 后容易顶到过高上限。v5.2 将 4 组门上限从 `32 / 42 / 52 / 62` 收到 `24 / 31 / 38 / 45`，并稍微下压后段门的初始范围。
+- [Fixed P2] 敌群压力偏低且自动复测路线不稳定。v5.2 将波次数量/速度调到 `44@2.05 / 66@2.32 / 86@2.62 / 108@2.92`，并新增 dev-only `autoPilot`：接近门时走右侧好路线，非门阶段追踪敌群中心清怪。
+- [Fixed P2] 新增 dev-only `balanceLog`，记录 gate、wave-hit、wave-clear、boss-start、won/lost 节点，方便后续不靠肉眼猜数值。
+
+### Verification
+
+- Production build: passed.
+- Browser console: zero runtime errors；保留既有 Three.js Clock deprecation 和 shader precision warning。
+- AutoPilot full run: final result `won`，Boss 前 `95` 兵，最终 `52` 兵，Boss duration `16.27s`，FPS `120`。
+- Gate feedback remained responsive: right gates still reached `+24 / +31 / +38 / +45` under visible fire.
+- The run no longer ends as an unthreatened oversized-army sweep; wave contact and Boss pressure reduced the army from `135` after the final gate to `52` at victory.
+
+### Follow-up polish
+
+- P2: 需要真人手感复测，确认自动驾驶平衡在手玩时也公平，尤其是第三、第四波的压迫是否过猛。
+- P2: 如果真人走位比 autoPilot 更灵活，后续可把 Boss 战目标收紧到 `18-24` 秒，或微增 Boss projectile 命中压力。
+- P3: 后续模型和动画升级可以提升 Boss 威胁感，避免继续单纯堆数值。
+
+final result: passed
+
 ## v5.1 gate-hit accounting, v5 camera backdrop and procedural mech kit verification
 
 - Source feedback: user reported gate values barely grew despite many bullets, suspected the gate should count received bullet hits rather than per-shooter cadence; also reported final-region bullets passing through enemies/Boss. User then requested autonomous overnight polish for the new generated background and procedural low-poly character/Boss style.
