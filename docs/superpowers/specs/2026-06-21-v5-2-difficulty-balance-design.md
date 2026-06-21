@@ -1,98 +1,96 @@
-# Skyline Legion v5.2 Difficulty Balance Design
+# Skyline Legion v5.2 难度平衡设计
 
-## Goal
+## 目标
 
-v5.2 will verify and rebalance the full normal run after the v5.1 change that made gate growth follow the rule "one normal bullet hit equals one gate-value increment, heavy cannon hit equals two increments."
+v5.2 要做一次完整普通流程复测，并在必要时重新平衡数值。背景是 v5.1 已经把倍增门成长改成了“普通子弹命中 1 发，门数值增加 1；重炮命中 1 发，门数值增加 2”。
 
-The goal is to keep the visible bullet-to-gate feedback satisfying while preventing the full run from becoming a guaranteed oversized-army sweep. A clean run should still feel powerful, but the player should reach the Boss with enough tension that Boss attacks and prior route choices matter.
+这次的目标不是削掉爽感，而是保留“子弹打门，数字明显上涨”的反馈，同时避免整局稳定滚成超大军团无压力通关。理想状态是：走位和选门做得好时很爽、能赢，但到 Boss 前后仍然有压力，Boss 攻击和前面路线选择都真的有意义。
 
-## Current Context
+## 当前上下文
 
-- Gate templates in `src/gameConfig.js` now all use `shotsPerPoint: 1`.
-- Gate max values are `32`, `42`, `52`, and `62`.
-- The player starts with `12` troops and can clamp up to `320`.
-- Waves currently contain `40`, `58`, `74`, and `90` enemies with speeds `1.9`, `2.2`, `2.5`, and `2.8`.
-- Boss health starts at `82`, with aimed projectiles, shockwave losses, forward pressure, and visible hit feedback.
-- `design-qa.md` already notes that v5.1 may be intentionally easier and needs full normal-difficulty playtest.
+- `src/gameConfig.js` 里的所有倍增门现在都是 `shotsPerPoint: 1`。
+- 当前 4 组门的最大值分别是 `32`、`42`、`52`、`62`。
+- 玩家初始兵力是 `12`，总兵力上限是 `320`。
+- 当前 4 波敌人数量分别是 `40`、`58`、`74`、`90`，推进速度分别是 `1.9`、`2.2`、`2.5`、`2.8`。
+- Boss 初始血量是 `82`，已有瞄准弹、冲击波、前压和命中反馈。
+- `design-qa.md` 已经记录：v5.1 的“1 发子弹 = +1”可能让游戏偏简单，需要一次完整普通难度复测。
 
-## Recommended Approach
+## 推荐方案
 
-Use an evidence-first, small-parameter balance pass.
+采用“先实测，再小范围调参数”的方案。
 
-First, run a normal full-play smoke test and collect debug snapshots at the key pressure points:
+第一步先跑一局普通完整流程，并记录关键节点：
 
-- values displayed when each gate resolves;
-- troops after each gate contact;
-- enemies cleared and losses per wave;
-- troops at Boss entry;
-- Boss fight duration, final survivors, combo, score, and win/loss result.
+- 每个倍增门接触时显示的左右门数值；
+- 每次过门后的兵力；
+- 每波敌人造成的损失，以及是否被清完；
+- 进入 Boss 战时的兵力；
+- Boss 战持续时间、最终剩余兵力、连击、分数、胜负结果。
 
-Then adjust only the minimum set of tuning values needed to restore tension:
+第二步只调恢复压力所必需的少量数值：
 
-- gate initial ranges and max values;
-- enemy wave count and speed;
-- Boss health, advance, projectile cadence, shockwave cadence, or casualty cap.
+- 倍增门初始范围和最大值；
+- 敌人波次数量和推进速度；
+- Boss 血量、前压速度、子弹频率、冲击波频率或单次伤亡上限。
 
-Do not introduce dynamic difficulty, new mechanics, new art direction, or structural refactors in this pass.
+这一轮不做动态难度、不加新机制、不换美术方向，也不做大范围重构。
 
-## Alternative Approaches Considered
+## 考虑过的其他方案
 
-### Gate-Only Tuning
+### 只调倍增门
 
-This is the fastest option and preserves combat systems untouched, but it may only hide the issue if enemy/Boss pressure is too weak after v5.1. It also risks making gates feel less responsive even though gate feedback was the thing v5.1 improved.
+这是最快的方式，也最不影响战斗系统。但如果真正的问题是敌人和 Boss 压力不够，只调门可能只是把问题藏起来；而且容易让 v5.1 刚改善的“打门数字上涨”反馈变弱。
 
-### Enemy/Boss-Only Tuning
+### 只调敌人和 Boss
 
-This keeps the new gate growth untouched, but it could turn later waves into abrupt punishment and make the run feel unfair after the player has already earned a large army.
+这样可以完整保留当前倍增门爽感，但风险是后半段敌人突然变硬或变快，让玩家觉得“我明明已经打出了大军团，却被系统硬惩罚”。
 
-### Dynamic Difficulty
+### 做动态难度
 
-Dynamic scaling could keep every run in a target difficulty band, but it is too broad for v5.2. It would make QA harder because the player may not know why enemy pressure changed.
+动态难度可以把每局控制在目标压力区间里，但现在太重了。它会让 QA 变复杂，也会让玩家不清楚为什么敌人压力突然变化，所以不放进 v5.2。
 
-## Gameplay Targets
+## 体验目标
 
-- A good route should usually win, but should not end with a trivially huge survivor count.
-- A poor route or missed positive gate should still be recoverable early, but punishing by the final wave.
-- Gate values should visibly climb under fire and keep the "one hit means one increment" feeling.
-- The Boss should remain visible long enough to use its projectile and shockwave patterns.
-- The Boss fight should usually last long enough to create pressure, roughly 15 to 30 seconds in a successful normal run.
-- Final survivors on a clean run should land in a satisfying but not absurd range; exact target can be tuned from measured data.
+- 好路线通常应该能赢，但不应该每次都用夸张兵力无压力碾压。
+- 差路线或错过正向门时，前期仍可救回，后期会明显吃亏。
+- 倍增门数字仍然要在子弹命中时明显上涨，保留“1 发命中 = 1 点成长”的直觉。
+- Boss 要活得足够久，能展示瞄准弹和冲击波，而不是刚出现就被秒。
+- 一次成功的普通 Boss 战，理想上大约持续 `15-30` 秒。
+- 成功通关的剩余兵力应该“很爽但不离谱”；具体目标值根据实测数据再定。
 
-## Implementation Scope
+## 实施范围
 
-Expected files:
+预计会改：
 
-- `src/gameConfig.js` for gate and wave values.
-- `src/App.jsx` for Boss timing, health, and debug/QA instrumentation if needed.
-- `design-qa.md` for the v5.2 verification record.
+- `src/gameConfig.js`：倍增门和敌人波次相关数值。
+- `src/App.jsx`：Boss 血量、攻击节奏、前压速度，或必要的开发调试记录。
+- `design-qa.md`：追加 v5.2 的实测与验证记录。
 
-Optional, only if needed:
+只有在确实需要时，才会加一个很小的开发期调试辅助，把平衡检查点记录到 `window.__SKYLINE_DEBUG__`。这个辅助不能改变正式玩法。
 
-- a small dev-only debug helper that records balance checkpoints to `window.__SKYLINE_DEBUG__`, as long as it stays out of production behavior.
+不做：
 
-Out of scope:
+- GLB/FBX 模型替换；
+- 新玩家技能；
+- 新敌人类型；
+- 大拆 `App.jsx`；
+- 部署或单 HTML 构建改动，除非这轮触碰的代码影响到它们。
 
-- authored GLB/FBX model work;
-- new player abilities;
-- new enemy types;
-- large `App.jsx` refactors;
-- deployment or single HTML changes unless the touched code affects them.
+## 验证计划
 
-## Verification Plan
+- 跑 `git diff --check`。
+- 跑 `npm run build`。
+- 用本地浏览器在竖屏视口验证。
+- 至少完成或模拟一局普通完整流程。
+- 通过 `window.__SKYLINE_DEBUG__` 检查门、波次、兵力和 Boss 数据。
+- 确认浏览器控制台没有运行时报错；已有的 Three.js 上游 warning 可以保留。
+- 在 `design-qa.md` 追加 v5.2 记录，写清楚调整前后数据和剩余问题。
 
-- Run `git diff --check`.
-- Run `npm run build`.
-- Run local browser verification in a portrait viewport.
-- Complete or simulate at least one normal full run.
-- Inspect `window.__SKYLINE_DEBUG__` during or after the run for gate, wave, troop, and Boss metrics.
-- Confirm the browser console has zero runtime errors, allowing existing upstream Three.js warnings.
-- Append a v5.2 section to `design-qa.md` with the measured before/after result and remaining follow-up items.
+## 验收标准
 
-## Acceptance Criteria
-
-- Build passes.
-- A normal run is winnable with clean play.
-- Gate growth remains visibly responsive after v5.1.
-- The final run does not consistently snowball into an unthreatened oversized-army finish.
-- Boss attacks visibly matter before victory.
-- No unrelated visual direction, asset pipeline, or deployment behavior changes are introduced.
+- 构建通过。
+- 普通流程在清晰操作下可以通关。
+- v5.1 的倍增门成长反馈仍然明显。
+- 完整流程不会稳定滚成“超大军团无压力收尾”。
+- Boss 攻击在胜利前能实际造成压力。
+- 不引入无关的视觉方向、资源管线或部署行为变化。
