@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
-import { Float, Sparkles, Text } from "@react-three/drei";
+import { Float, Sparkles, Text as DreiText } from "@react-three/drei";
 import {
   ArrowsOutSimple,
   Pause,
@@ -10,8 +10,10 @@ import {
 import * as THREE from "three";
 import {
   Suspense,
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -74,7 +76,134 @@ const BOOT_MIN_DURATION = 720;
 const INTRO_DURATION = 920;
 const FEEDBACK_COLOR_ATTRIBUTE = "instanceFeedback";
 const FEEDBACK_GREY_ATTRIBUTE = "instanceGrey";
-const assetUrl = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
+const IS_SINGLE_FILE_BUILD = import.meta.env.BASE_URL === "./";
+const assetUrl = (path) => {
+  if (/^(data:|blob:|https?:)/.test(path)) return path;
+  return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
+};
+
+const CanvasText = forwardRef(function CanvasText(
+  {
+    children,
+    position,
+    fontSize = 0.5,
+    color = "#ffffff",
+    outlineColor = "#062d42",
+    outlineWidth = 0.02,
+    anchorX = "center",
+    anchorY = "middle",
+  },
+  ref,
+) {
+  const sprite = useRef();
+  const textValue = useRef(String(children ?? ""));
+  const colorValue = useRef(color);
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 256;
+    const map = new THREE.CanvasTexture(canvas);
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.minFilter = THREE.LinearFilter;
+    map.magFilter = THREE.LinearFilter;
+    return map;
+  }, []);
+
+  const fontPixelSize = 208;
+
+  const updateSpriteScale = useCallback(
+    () => {
+      if (!sprite.current) return;
+      const height = fontSize * 1.22;
+      const width = fontSize * 2.42;
+      const offsetX =
+        anchorX === "left" ? width * 0.5 : anchorX === "right" ? -width * 0.5 : 0;
+      const offsetY =
+        anchorY === "top" ? -height * 0.5 : anchorY === "bottom" ? height * 0.5 : 0;
+      sprite.current.scale.set(width, height, 1);
+      sprite.current.position.set(
+        (position?.[0] ?? 0) + offsetX,
+        (position?.[1] ?? 0) + offsetY,
+        position?.[2] ?? 0,
+      );
+    },
+    [anchorX, anchorY, fontSize, position],
+  );
+
+  const redraw = useCallback(() => {
+    const canvas = texture.image;
+    const value = String(textValue.current || " ");
+    const context = canvas.getContext("2d");
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.font = `900 ${fontPixelSize}px Arial, Helvetica, sans-serif`;
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.lineJoin = "round";
+    const baseLineWidth = Math.max(8, outlineWidth * 310);
+    const metrics = context.measureText(value);
+    const textHeight =
+      (metrics.actualBoundingBoxAscent || fontPixelSize * 0.78) +
+      (metrics.actualBoundingBoxDescent || fontPixelSize * 0.22);
+    const safeWidth = canvas.width - baseLineWidth * 3.2;
+    const safeHeight = canvas.height - baseLineWidth * 3.2;
+    const scale = Math.min(1.12, safeWidth / Math.max(1, metrics.width), safeHeight / Math.max(1, textHeight));
+    context.save();
+    context.translate(canvas.width / 2, canvas.height / 2 + 6);
+    context.scale(scale, scale);
+    context.lineWidth = baseLineWidth / scale;
+    context.strokeStyle = outlineColor;
+    context.fillStyle = colorValue.current;
+    context.strokeText(value, 0, 0);
+    context.fillText(value, 0, 0);
+    context.restore();
+    texture.needsUpdate = true;
+    updateSpriteScale();
+  }, [fontPixelSize, outlineColor, outlineWidth, texture, updateSpriteScale]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      get text() {
+        return textValue.current;
+      },
+      set text(value) {
+        textValue.current = String(value ?? "");
+      },
+      get color() {
+        return colorValue.current;
+      },
+      set color(value) {
+        colorValue.current = value;
+      },
+      sync: redraw,
+    }),
+    [redraw],
+  );
+
+  useLayoutEffect(() => {
+    textValue.current = String(children ?? "");
+    colorValue.current = color;
+    redraw();
+  }, [children, color, redraw]);
+
+  useEffect(() => () => texture.dispose(), [texture]);
+
+  return (
+    <sprite ref={sprite} position={position}>
+      <spriteMaterial
+        map={texture}
+        transparent
+        depthWrite={false}
+        toneMapped={false}
+      />
+    </sprite>
+  );
+});
+
+const SceneText = forwardRef(function SceneText(props, ref) {
+  if (IS_SINGLE_FILE_BUILD) return <CanvasText ref={ref} {...props} />;
+  return <DreiText ref={ref} {...props} />;
+});
 
 function setupFeedbackAttributes(mesh, count) {
   if (!mesh?.geometry) return;
@@ -969,16 +1098,15 @@ function GateValue({ stateRef, side }) {
     if (value !== previous.current) {
       previous.current = value;
       text.current.text = formatGateValue(value);
+      text.current.color = gateColor(value);
       text.current.sync?.();
     }
-    const color = gateColor(value);
-    text.current.color = color;
   });
   return (
-    <Text
+    <SceneText
       ref={text}
       position={[0, 1.65, -0.08]}
-      fontSize={0.82}
+      fontSize={IS_SINGLE_FILE_BUILD ? 0.94 : 0.82}
       color="#ffffff"
       anchorX="center"
       anchorY="middle"
@@ -986,7 +1114,7 @@ function GateValue({ stateRef, side }) {
       outlineColor="#062d42"
     >
       {formatGateValue(stateRef[`${side}Value`])}
-    </Text>
+    </SceneText>
   );
 }
 
@@ -1116,14 +1244,14 @@ function Gate({
       </mesh>
       <GateValue stateRef={stateRef} side={side} />
       <ValueBar stateRef={stateRef} side={side} maxValue={data.maxValue} />
-      <Text
+      <SceneText
         position={[0, 0.82, -0.08]}
         fontSize={0.16}
         color="#ddffff"
         anchorX="center"
       >
         SHOOT TO INCREASE
-      </Text>
+      </SceneText>
     </group>
   );
 }
@@ -1641,7 +1769,7 @@ function Boss({
           </group>
         </Float>
       ))}
-      <Text
+      <SceneText
         position={[0, 2.85, 0]}
         fontSize={0.48}
         color="#ffffff"
@@ -1649,7 +1777,7 @@ function Boss({
         outlineColor="#062d42"
       >
         AEGIS CORE
-      </Text>
+      </SceneText>
       <Sparkles
         count={48}
         scale={[5, 4, 2.5]}

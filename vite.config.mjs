@@ -2,17 +2,24 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 const repositoryName = process.env.GITHUB_REPOSITORY?.split("/")[1];
-const base = process.env.GITHUB_ACTIONS && repositoryName ? `/${repositoryName}/` : "/";
+const isSingleFileBuild = process.env.SINGLE_FILE_BUILD === "1";
+const base = isSingleFileBuild
+  ? "./"
+  : process.env.GITHUB_ACTIONS && repositoryName
+    ? `/${repositoryName}/`
+    : "/";
 
 export default defineConfig({
   base,
   build: {
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes("node_modules")) return "vendor";
-          return undefined;
-        },
+        manualChunks: isSingleFileBuild
+          ? undefined
+          : (id) => {
+              if (id.includes("node_modules")) return "vendor";
+              return undefined;
+            },
       },
     },
   },

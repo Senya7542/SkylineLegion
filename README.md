@@ -25,6 +25,16 @@ npm run dev
 
 浏览器打开终端中显示的本地地址即可试玩。
 
+## 单文件试玩包
+
+如果对方网络打不开 GitHub Pages，可以临时生成一个可以直接发送的 HTML：
+
+```powershell
+npm run build:single
+```
+
+生成文件在 `output/SkylineLegion.html`。手机收到后建议选择“用浏览器打开”，不要用聊天软件内置预览打开。
+
 ## 项目结构
 
 这个仓库现在就是 `SkylineLegion` 项目的根目录，代码、资源和配置都放在根目录下：
