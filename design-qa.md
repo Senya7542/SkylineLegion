@@ -1,19 +1,19 @@
-# Design QA — Skyline Legion v4
+﻿# Design QA — Skyline Legion v4
 
 - Source visual truth: Codex thread ImageGen result, **Azure Utopia (Option 1)**.
 - Implementation URL: `http://127.0.0.1:4180/`
 - Primary viewport: `390 × 844`
 - Additional viewports: `320 × 568`, `1200 × 900`
 - Evidence:
-  - `game/output/playwright/mobile-start-v2.png`
-  - `game/output/playwright/mobile-gameplay-v2.png`
-  - `game/output/playwright/mobile-boss-v2.png`
-  - `game/output/playwright/mobile-victory-v2.png`
-  - `game/output/playwright/desktop-start-v2.png`
-  - `game/output/playwright/v3-gate-before-contact.png`
-  - `game/output/playwright/v3-gate-after-contact.png`
-  - `game/output/playwright/v3-precise-enemy-hits.png`
-  - `game/output/playwright/v3-victory.png`
+  - `output/playwright/mobile-start-v2.png`
+  - `output/playwright/mobile-gameplay-v2.png`
+  - `output/playwright/mobile-boss-v2.png`
+  - `output/playwright/mobile-victory-v2.png`
+  - `output/playwright/desktop-start-v2.png`
+  - `output/playwright/v3-gate-before-contact.png`
+  - `output/playwright/v3-gate-after-contact.png`
+  - `output/playwright/v3-precise-enemy-hits.png`
+  - `output/playwright/v3-victory.png`
 - Tested states: menu, gate charging, wave combat, pause/resume, muted audio, drone upgrade, Boss combat, victory, replay, local high score.
 
 ## Full-view comparison evidence
@@ -78,7 +78,7 @@ The revised implementation preserves the selected concept's portrait composition
 ## v4.1 aircraft and crowd verification
 
 - Source visual truth: `C:/Users/Yoru17/AppData/Local/Temp/codex-clipboard-056adeb5-4625-4ab4-af6a-336bbb1b72d4.png`.
-- Implementation evidence: `game/.playwright-cli/page-2026-06-19T12-19-19-479Z.png`.
+- Implementation evidence: `.playwright-cli/page-2026-06-19T12-19-19-479Z.png`.
 - Combined comparison evidence: `C:/Users/Yoru17/AppData/Local/Temp/v4-1-comparison.png`.
 - Comparison viewport/state: portrait active gameplay after the first positive gate, with an upgraded player formation and continuous fire.
 - Full-view comparison: both compositions now use a visible aircraft as the formation anchor, a surrounding blue player crowd, forward projectile lanes, numeric gates and distant enemy mass. The implementation intentionally keeps the existing low-poly real-time Azure Utopia environment instead of matching the concept render's offline-model detail.
@@ -122,10 +122,10 @@ The revised implementation preserves the selected concept's portrait composition
 ## v4.2 combat feedback, crowd physics and environment verification
 
 - Source visual truth: `C:/Users/Yoru17/AppData/Local/Temp/codex-clipboard-056adeb5-4625-4ab4-af6a-336bbb1b72d4.png`.
-- Generated environment asset: `game/public/assets/azure-sky-panorama-v1.jpg`.
+- Generated environment asset: `public/assets/azure-sky-panorama-v1.jpg`.
 - Implementation screenshots:
-  - `game/.playwright-cli/page-2026-06-19T18-25-58-856Z.png` — elevated aircraft, cannon corridor, crowd spacing, shadows and sky.
-  - `game/.playwright-cli/page-2026-06-19T18-20-48-083Z.png` — isolated Boss encounter with health bar and active fire.
+  - `.playwright-cli/page-2026-06-19T18-25-58-856Z.png` — elevated aircraft, cannon corridor, crowd spacing, shadows and sky.
+  - `.playwright-cli/page-2026-06-19T18-20-48-083Z.png` — isolated Boss encounter with health bar and active fire.
 - Combined comparison evidence: `C:/Users/Yoru17/AppData/Local/Temp/v4-2-comparison.png`.
 - Comparison viewport: `390 × 844`.
 - Comparison state: active portrait gameplay; the simulation was paused and the pause overlay hidden only to capture a stable frame.
@@ -148,7 +148,7 @@ The revised implementation preserves the selected concept's portrait composition
 - [Fixed P1] Projectiles could interact with later regions. Every projectile now carries an explicit region and phase; travel bullets expire quickly and cannot charge future gates or damage locked waves.
 - [Fixed P1] The Boss lacked readable attacks and pressure. It now advances, fires twin projectiles and periodically emits a visible shockwave.
 - [Fixed P2] The scene lacked a sky image, environmental reflection and readable shadows. A generated equirectangular panorama, shadow-casting key light and receiving surfaces were added.
-- [Fixed P2] Character rendering and gameplay state were tightly coupled. `game/src/entityVisuals.js` now defines the procedural/model adapter contract for later GLB or FBX-derived character replacement.
+- [Fixed P2] Character rendering and gameplay state were tightly coupled. `src/entityVisuals.js` now defines the procedural/model adapter contract for later GLB or FBX-derived character replacement.
 
 ### Required fidelity surfaces
 
@@ -176,9 +176,9 @@ The revised implementation preserves the selected concept's portrait composition
 ## v4.3 feedback visibility, free crowd and seamless environment verification
 
 - Source visual truth: `C:/Users/Yoru17/AppData/Local/Temp/codex-clipboard-056adeb5-4625-4ab4-af6a-336bbb1b72d4.png`.
-- Full-view implementation evidence: `game/.playwright-cli/page-2026-06-20T03-35-37-152Z.png`.
-- Upgrade feedback evidence: `game/.playwright-cli/page-2026-06-20T03-47-16-039Z.png`.
-- Hit/death feedback evidence: `game/.playwright-cli/page-2026-06-20T03-48-54-682Z.png`.
+- Full-view implementation evidence: `.playwright-cli/page-2026-06-20T03-35-37-152Z.png`.
+- Upgrade feedback evidence: `.playwright-cli/page-2026-06-20T03-47-16-039Z.png`.
+- Hit/death feedback evidence: `.playwright-cli/page-2026-06-20T03-48-54-682Z.png`.
 - Combined comparison evidence: `C:/Users/Yoru17/AppData/Local/Temp/v4-3-comparison.png`.
 - Viewport/state: `390 × 844`, active portrait gameplay after the first gate.
 
@@ -211,10 +211,10 @@ final result: passed
 ## v5.1 gate-hit accounting, v5 camera backdrop and procedural mech kit verification
 
 - Source feedback: user reported gate values barely grew despite many bullets, suspected the gate should count received bullet hits rather than per-shooter cadence; also reported final-region bullets passing through enemies/Boss. User then requested autonomous overnight polish for the new generated background and procedural low-poly character/Boss style.
-- Generated background asset: `game/public/assets/skyline-backdrop-v3.png`.
-- Generated character reference: `game/public/assets/references/lowpoly-unit-style-v1.png`.
-- Active gameplay screenshot evidence: `game/.playwright-cli/page-2026-06-20T19-19-11-751Z.png`.
-- Boss visual screenshot evidence: `game/.playwright-cli/page-2026-06-20T19-37-51-855Z.png`.
+- Generated background asset: `public/assets/skyline-backdrop-v3.png`.
+- Generated character reference: `public/assets/references/lowpoly-unit-style-v1.png`.
+- Active gameplay screenshot evidence: `.playwright-cli/page-2026-06-20T19-19-11-751Z.png`.
+- Boss visual screenshot evidence: `.playwright-cli/page-2026-06-20T19-37-51-855Z.png`.
 
 ### Findings and patches
 
@@ -245,7 +245,7 @@ final result: passed
 ## v5.0 camera perspective pass for runway-horizon alignment
 
 - Source feedback: user compared the new generated backdrop against the live game screenshot and noted the road vanishing point was still too far from the backdrop horizon/sea line.
-- Active gameplay screenshot evidence: `game/.playwright-cli/page-2026-06-20T15-01-05-467Z.png`.
+- Active gameplay screenshot evidence: `.playwright-cli/page-2026-06-20T15-01-05-467Z.png`.
 - Viewport/state: portrait gameplay capture in a non-headed Playwright CLI session against `http://127.0.0.1:4180/`.
 
 ### Findings and patches
@@ -270,8 +270,8 @@ final result: passed
 ## v4.9 generated vanishing-point backdrop and procedural low-poly kit verification
 
 - Source feedback: user approved a three-step direction: procedural glass road/environment first, then procedural low-poly soldiers, then procedural low-poly Boss; avoid relying on external models for now.
-- Generated project asset: `game/public/assets/skyline-backdrop-v2.png`.
-- Active gameplay screenshot evidence: `game/.playwright-cli/page-2026-06-20T14-41-26-969Z.png`.
+- Generated project asset: `public/assets/skyline-backdrop-v2.png`.
+- Active gameplay screenshot evidence: `.playwright-cli/page-2026-06-20T14-41-26-969Z.png`.
 - Viewport/state: portrait gameplay capture in a non-headed Playwright CLI session against `http://127.0.0.1:4180/`.
 
 ### Findings and patches
@@ -300,7 +300,7 @@ final result: passed
 ## v4.8 continuous procedural glass runway verification
 
 - Source feedback: user liked the glass-runway direction but noticed the previous road was built from repeated chunks with visible seams and inconsistent widths; requested a more procedural low-poly asset approach before relying on external models.
-- Active gameplay screenshot evidence: `game/.playwright-cli/page-2026-06-20T14-30-33-300Z.png`.
+- Active gameplay screenshot evidence: `.playwright-cli/page-2026-06-20T14-30-33-300Z.png`.
 - Viewport/state: portrait gameplay capture in a non-headed Playwright CLI session against `http://127.0.0.1:4180/`.
 
 ### Findings and patches
@@ -326,7 +326,7 @@ final result: passed
 ## v4.7 runway perspective and sky corridor verification
 
 - Source feedback: user annotated screenshot requesting the road vanishing point and camera perspective expose more of the beautiful forward sky/background.
-- Active gameplay screenshot evidence: `game/.playwright-cli/page-2026-06-20T14-06-36-204Z.png`.
+- Active gameplay screenshot evidence: `.playwright-cli/page-2026-06-20T14-06-36-204Z.png`.
 - Viewport/state: `405 x 720` portrait gameplay capture in a non-headed Playwright CLI session against `http://127.0.0.1:4180/`.
 
 ### Findings and patches
@@ -352,8 +352,8 @@ final result: passed
 ## v4.6 strict portrait frame, fixed backdrop, projectile scale and sustained fire verification
 
 - Source feedback: latest 9:16 portrait screenshots and notes about background coverage, procedural side props, bullet size, firepower drop and visible Playwright windows.
-- Menu screenshot evidence: `game/.playwright-cli/page-2026-06-20T13-01-46-342Z.png`.
-- Active gameplay screenshot evidence: `game/.playwright-cli/page-2026-06-20T13-04-53-272Z.png`.
+- Menu screenshot evidence: `.playwright-cli/page-2026-06-20T13-01-46-342Z.png`.
+- Active gameplay screenshot evidence: `.playwright-cli/page-2026-06-20T13-04-53-272Z.png`.
 - Viewport/state: `405 x 720` portrait viewport in a non-headed Playwright CLI session against `http://127.0.0.1:4180/`.
 
 ### Findings and patches
@@ -383,8 +383,8 @@ final result: passed
 ## v4.5 regional projectile logic, fixed backdrop, easier gates and Boss balance verification
 
 - Source visual truth: `C:/Users/Yoru17/AppData/Local/Temp/codex-clipboard-056adeb5-4625-4ab4-af6a-336bbb1b72d4.png`.
-- Implementation evidence: `game/.playwright-cli/page-2026-06-20T12-35-54-578Z.png`.
-- Full-run result evidence: `game/.playwright-cli/page-2026-06-20T12-35-10-617Z.png`.
+- Implementation evidence: `.playwright-cli/page-2026-06-20T12-35-54-578Z.png`.
+- Full-run result evidence: `.playwright-cli/page-2026-06-20T12-35-10-617Z.png`.
 - Viewport/state: active gameplay and full result state in local browser at `http://127.0.0.1:4175/`.
 - Focused region evidence: debug state from `window.__SKYLINE_DEBUG__` after a complete run.
 
@@ -394,7 +394,7 @@ final result: passed
 - [Fixed P1] Later-area bullets appeared to miss enemies too often. Normal projectile hit radius and heavy-shot steering were increased so side and rear rows are hit more reliably.
 - [Fixed P1] Gate charging was too punishing. Gate thresholds are now region 1 = 1 shot per +1, regions 2/3 = 2 shots per +1, region 4 = 3 shots per +1; heavy cannon counts as 2 shots.
 - [Fixed P1] Boss damage made the game effectively unwinnable after the AoE update. Boss health, projectile radius, hit cap, volley cadence and shockwave cadence were tuned so the boss remains threatening but a clean run can win.
-- [Fixed P2] The sky-sphere background was too blurry for a fixed camera. A portrait fixed-camera backdrop was generated and added as `game/public/assets/skyline-backdrop-v1.jpg`; the old panorama remains only as low-strength environment lighting.
+- [Fixed P2] The sky-sphere background was too blurry for a fixed camera. A portrait fixed-camera backdrop was generated and added as `public/assets/skyline-backdrop-v1.jpg`; the old panorama remains only as low-strength environment lighting.
 - [Fixed P2] Upgrade yellow and projectiles were not bright enough. Upgrade feedback now completes faster and pushes the shader toward a brighter yellow emission-style peak; bullets use larger additive yellow glows.
 - [Fixed P2] Death grey read too close to black. Player and enemy death grey colors were lifted to lighter grey values.
 
@@ -425,8 +425,8 @@ final result: passed
 ## v4.4 shader feedback, gate pacing, Boss AoE and 4K sky verification
 
 - Source visual truth: `C:/Users/Yoru17/AppData/Local/Temp/codex-clipboard-056adeb5-4625-4ab4-af6a-336bbb1b72d4.png`.
-- Implementation screenshot: `game/.playwright-cli/page-2026-06-20T06-09-31-685Z.png`.
-- Gate-state screenshot: `game/.playwright-cli/page-2026-06-20T06-04-00-192Z.png`.
+- Implementation screenshot: `.playwright-cli/page-2026-06-20T06-09-31-685Z.png`.
+- Gate-state screenshot: `.playwright-cli/page-2026-06-20T06-04-00-192Z.png`.
 - Full-view comparison evidence: `C:/Users/Yoru17/AppData/Local/Temp/v4-4-comparison.png`.
 - Viewport/state: `1280 x 720` desktop capture of the portrait game surface, active gate-combat state.
 - Focused region evidence: gate-state capture and debug samples from `window.__SKYLINE_DEBUG__`; no additional crop was needed because the gate, projectile stream, aircraft, crowd and sky are visible in the full-frame capture.
@@ -463,3 +463,4 @@ final result: passed
 - P3: bundle splitting remains useful later because the Three.js chunk is still above Vite's default warning threshold.
 
 final result: passed
+

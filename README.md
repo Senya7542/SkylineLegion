@@ -12,9 +12,17 @@
 ## 本地运行
 
 ```powershell
-cd game
 npm install
 npm run dev
 ```
 
 浏览器打开终端中显示的本地地址即可试玩。
+
+## 项目结构
+
+这个仓库现在就是 `SkylineLegion` 项目的根目录，代码、资源和配置都放在根目录下：
+
+- `src/`：游戏逻辑、角色和场景代码
+- `public/assets/`：背景图、参考图等静态资源
+- `design-qa.md`：阶段记录、设计检查和优化备注
+- `package.json`：本地运行与构建脚本
