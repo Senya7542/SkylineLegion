@@ -2196,7 +2196,12 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       bullet.shooter = shooter.index;
       bullet.regionIndex = stage.regionIndex;
       bullet.phase = stage.phase;
-      bullet.life = stage.phase === "travel" ? 0.92 : rapid ? 1.12 : 1.34;
+      bullet.life =
+        stage.phase === "gate"
+          ? rapid ? 0.62 : 0.76
+          : stage.phase === "travel"
+            ? 0.72
+            : rapid ? 1.12 : 1.34;
       shooter.nextShotAt =
         time +
         (rapid ? 0.22 : 0.34) +
@@ -2241,7 +2246,12 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     bullet.shooter = -1;
     bullet.regionIndex = stage.regionIndex;
     bullet.phase = stage.phase;
-    bullet.life = stage.phase === "travel" ? 1.05 : 1.75;
+    bullet.life =
+      stage.phase === "gate"
+        ? 1.05
+        : stage.phase === "travel"
+          ? 0.95
+          : 1.75;
     cannonPulse.current = time;
     spawnImpact(playerX.current, 0.83, 3.08, "#fff16a", 0.2, 1.25);
     onEvent({ type: "shoot", heavy: true });
@@ -3052,6 +3062,12 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
         readyUnitCount,
         troops.current,
         rapidRef.current,
+        Infinity,
+      ).length;
+      const readyShooterCount = getVolleyShooterPlan(
+        readyUnitCount,
+        troops.current,
+        rapidRef.current,
         state.clock.elapsedTime,
       ).length;
       const bulletStats = bullets.current.reduce(
@@ -3102,6 +3118,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
             visibleUnits: activeArmyUnits.length,
             readyUnitCount: readyUnitCount.length,
             shooterCount: exposedShooterCount,
+            readyShooterCount,
             bulletStats,
             gateStates: gateStates.current.map((gate) => ({ ...gate })),
             aliveByWave,
@@ -3346,7 +3363,9 @@ function DevPanel({ data }) {
       <div>
         <span>兵 {debug.troops}</span>
         <span>可见 {debug.visibleUnits}</span>
-        <span>射手 {debug.shooterCount}</span>
+        <span>
+          射手 {debug.shooterCount}/{debug.readyShooterCount}
+        </span>
       </div>
       <div>
         <span>弹 {debug.bulletStats.total}</span>

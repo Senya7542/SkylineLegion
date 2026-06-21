@@ -85,6 +85,28 @@ test("volley shooter plan selects only unblocked outer/front shooters", () => {
   assert.equal(plan.every((item) => item.power === 1), true);
 });
 
+test("volley shooter plan fires the visible upper silhouette across adjacent lanes", () => {
+  const shooters = [
+    { index: 1, x: -1.08, z: 2.92, nextShotAt: 0 },
+    { index: 2, x: -0.84, z: 2.55, nextShotAt: 0 },
+    { index: 3, x: -0.6, z: 2.48, nextShotAt: 0 },
+    { index: 4, x: -0.36, z: 2.42, nextShotAt: 0 },
+    { index: 5, x: -0.12, z: 2.38, nextShotAt: 0 },
+    { index: 6, x: 0.12, z: 2.38, nextShotAt: 0 },
+    { index: 7, x: 0.36, z: 2.42, nextShotAt: 0 },
+    { index: 8, x: 0.6, z: 2.48, nextShotAt: 0 },
+    { index: 9, x: 0.84, z: 2.55, nextShotAt: 0 },
+    { index: 10, x: 1.08, z: 2.92, nextShotAt: 0 },
+    { index: 11, x: 0, z: 3.05, nextShotAt: 0 },
+  ];
+  const plan = getVolleyShooterPlan(shooters, shooters.length, false, 1);
+
+  assert.deepEqual(
+    plan.map((item) => item.shooter.index),
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+  );
+});
+
 test("volley shooter plan respects initial shot offset timing", () => {
   const shooters = [
     { index: 1, x: -0.5, z: 2.4, nextShotAt: 0.12 },

@@ -16,6 +16,32 @@
   - `output/playwright/v3-victory.png`
 - Tested states: menu, gate charging, wave combat, pause/resume, muted audio, drone upgrade, Boss combat, victory, replay, local high score.
 
+## v5.9 露出轮廓射手验证
+
+- 来源反馈：玩家截图指出飞机机身两侧和上沿露出来的小兵都应该发射，而不是只让极少数最前排小兵开火。
+- 实现地址：`http://127.0.0.1:4180/`
+- 自动验证截图：`output/playwright/v5.9-silhouette-shooters.png`。
+
+### 修复内容
+
+- [Fixed P1] 旧的同 X 轴遮挡判断过于保守，侧翼露出的士兵会被误判为“被挡住”。现在改为横向弹道槽位，每个槽只选最靠前的活跃士兵开火，贴近截图里的外轮廓红箭头效果。
+- [Fixed P1] 保持玩家要求的真实弹道逻辑：普通士兵子弹仍然是 `power: 1`，命中门时仍然是一个真实子弹 `+1`，没有恢复弱视觉弹道。
+- [Fixed P2] 开发数据面板继续默认隐藏，同时后台 debug 拆分 `shooterCount` 和 `readyShooterCount`：前者表示露出槽位数量，后者表示当前冷却完成、这一帧可以立刻发射的数量。
+- [Fixed P2] 门阶段子弹寿命缩短，减少远距离提前刷门；波次和 Boss 阶段保留更长飞行时间，避免打敌人时显得突然消失。
+
+### 验证
+
+- 逻辑测试：`node --test tests/combatLogic.test.mjs` 通过 `10/10`。
+- 生产构建：`npm run build` 通过；Vite 仍然只报已有的大 vendor chunk 警告。
+- 浏览器自动局：`?flags=autoPilot,noEffects,noAssets` 完整胜利，页面错误为 `0`。
+- 自动局关键数据：Boss 时长 `7.19s`，最终兵力 `312`，Boss 炮弹造成 `2` 和 `5` 的群体损失。
+- 弹道数据：Boss 段露出射手稳定约 `20-22`，活跃真实子弹约 `46-114`，弱视觉弹道始终为 `0`。
+
+### 后续建议
+
+- P1: 现在露出轮廓小兵都能发射后，后段门数值会再次偏高，自动局第 2-4 门可涨到 `+123 / +164 / +118`。下一轮应该围绕“真实子弹 +1”重新调门初始值、门阶段距离和后段敌人消耗，避免过早顶到 `320` 兵上限。
+- P2: 后台 debug 可以继续补一项“门阶段命中次数/秒”，方便区分是射手太多、门出现太早，还是敌人消耗不够。
+
 ## v5.8 exposed shooters, real gate bullets and enemy cluster physics verification
 
 - Source feedback: user requested hiding the dev panel from normal play, replacing all-soldier visual fire with real outer/front shooters, making gates grow by exactly one per real bullet, and giving enemy troops physical clustering like the player formation.

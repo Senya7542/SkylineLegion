@@ -1,7 +1,7 @@
 const clampLocal = (value, min, max) => Math.max(min, Math.min(max, value));
 
-const SHOOTER_BLOCK_X = 0.34;
-const SHOOTER_BLOCK_Z = 0.18;
+const SHOOTER_LANE_WIDTH = 0.25;
+const SHOOTER_LANE_OFFSET = 4;
 const ENEMY_CLUSTER_RADIUS = 0.38;
 const ENEMY_CLUSTER_LIMIT_X = 2.28;
 const ENEMY_CLUSTER_MIN_Z_OFFSET = -1.35;
@@ -16,19 +16,29 @@ export function getInitialShotOffset(index) {
 }
 
 export function isShooterUnblocked(shooter, shooters) {
-  return !shooters.some((other) => {
-    if (other === shooter) return false;
-    if (other.active === false || other.dying || (other.scale ?? 1) < 0.72) return false;
-    const ahead = other.z < shooter.z - SHOOTER_BLOCK_Z;
-    return ahead && Math.abs(other.x - shooter.x) <= SHOOTER_BLOCK_X;
+  const lane = getShooterLane(shooter);
+  return shooters.every((other) => {
+    if (other === shooter) return true;
+    if (other.active === false || other.dying || (other.scale ?? 1) < 0.72) return true;
+    return getShooterLane(other) !== lane || other.z >= shooter.z;
   });
 }
+
+const getShooterLane = (shooter) =>
+  Math.floor(((shooter.x ?? 0) + SHOOTER_LANE_OFFSET) / SHOOTER_LANE_WIDTH);
 
 export function getVolleyShooterPlan(activeShooters, troopCount, rapid, time = 0) {
   if (!activeShooters.length || troopCount <= 0) return [];
   const sorted = [...activeShooters].sort((a, b) => a.x - b.x || a.z - b.z);
+  const laneFront = new Map();
+  sorted.forEach((shooter) => {
+    const lane = getShooterLane(shooter);
+    const current = laneFront.get(lane);
+    if (!current || shooter.z < current.z) laneFront.set(lane, shooter);
+  });
+
   return sorted.filter((shooter) =>
-    isShooterUnblocked(shooter, sorted) &&
+    laneFront.get(getShooterLane(shooter)) === shooter &&
     (shooter.nextShotAt ?? 0) <= time,
   ).map((shooter) => ({
     shooter,
