@@ -2236,16 +2236,28 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     onEvent({ type: "shoot", heavy: true });
   };
 
+  const getBossProjectileTarget = () => {
+    const frontUnit = armyUnits.current
+      .filter((unit) => unit.active && !unit.dying && unit.scale > 0.45)
+      .sort((a, b) => b.z - a.z)[0];
+    if (!frontUnit) {
+      return { x: playerX.current, z: 3.05, source: "aircraft" };
+    }
+    return {
+      x: clamp(playerX.current + frontUnit.x, -PLAYER_LIMIT, PLAYER_LIMIT),
+      z: frontUnit.z,
+      source: "front-troop",
+      unitId: frontUnit.index,
+    };
+  };
+
   const spawnBossVolley = (time) => {
     const bossZ = distance.current - BOSS_Z + bossAdvance.current;
     const projectile = bossProjectiles.current.find((item) => !item.active);
     if (!projectile) return;
     const muzzleX = 0;
-    const targetX = clamp(
-      playerX.current + (Math.random() - 0.5) * 0.42,
-      -PLAYER_LIMIT,
-      PLAYER_LIMIT,
-    );
+    const target = getBossProjectileTarget();
+    const targetX = target.x;
     const travelTime = Math.max(0.8, (3.1 - bossZ) / 8.2);
     projectile.active = true;
     projectile.x = muzzleX;
@@ -2255,14 +2267,16 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     projectile.vz = 8.2;
     projectile.life = 2.6;
     projectile.targetX = targetX;
-    projectile.targetZ = 3.05;
-    const radius = 1.45 + (BOSS_MAX_HEALTH - bossHealth.current) * 0.0046;
+    projectile.targetZ = target.z;
+    const radius = 0.74 + (BOSS_MAX_HEALTH - bossHealth.current) * 0.0023;
     projectile.radius = radius;
     projectile.spawnedAt = time;
     bossAttackAt.current = time;
     recordBalanceEvent("boss-fire", time, {
       projectiles: 1,
       radius: Number(radius.toFixed(2)),
+      targetSource: target.source,
+      targetUnit: target.unitId ?? null,
     });
     onEvent({ type: "boss-fire" });
   };
@@ -2497,13 +2511,6 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           if (gateState.resolved) return;
           const z = distance.current - gate.z;
           const side = collisionX < 0 ? "left" : "right";
-          const chosenSide =
-            playerX.current < -0.16
-              ? "left"
-              : playerX.current > 0.16
-                ? "right"
-                : null;
-          if (side !== chosenSide) return;
           const laneCenter = side === "left" ? -LANE_X : LANE_X;
           if (
             z <= oldZ + 0.12 &&

@@ -10,10 +10,10 @@ export const STARTING_TROOPS = 1;
 export const GATE_VALUE_CAP = 999;
 
 const GATE_TEMPLATES = [
-  { z: 28, left: [-12, -5], right: [6, 10], shotsPerPoint: 2 },
-  { z: 67, left: [-45, -24], right: [28, 40], shotsPerPoint: 2 },
-  { z: 108, left: [-78, -48], right: [48, 70], shotsPerPoint: 3 },
-  { z: 145, left: [-99, -70], right: [60, 90], shotsPerPoint: 4 },
+  { z: 28, penalty: [-12, -5], reward: [6, 10], shotsPerPoint: 2 },
+  { z: 67, penalty: [-45, -24], reward: [28, 40], shotsPerPoint: 2 },
+  { z: 108, penalty: [-78, -48], reward: [48, 70], shotsPerPoint: 3 },
+  { z: 145, penalty: [-99, -70], reward: [-45, -30], shotsPerPoint: 4 },
 ];
 
 export const WAVES = [
@@ -37,8 +37,11 @@ const pickRange = (random, [min, max]) =>
 export function createGates(runSeed = 1) {
   const random = seeded(runSeed * 7919 + 17);
   return GATE_TEMPLATES.map((template, index) => {
-    let left = pickRange(random, template.left);
-    let right = pickRange(random, template.right);
+    const penalty = pickRange(random, template.penalty);
+    const reward = pickRange(random, template.reward);
+    const rewardOnLeft = random() > 0.5;
+    const left = rewardOnLeft ? reward : penalty;
+    const right = rewardOnLeft ? penalty : reward;
 
     return {
       z: template.z,
@@ -46,6 +49,7 @@ export function createGates(runSeed = 1) {
       maxValue: GATE_VALUE_CAP,
       left,
       right,
+      rewardOnLeft,
     };
   });
 }

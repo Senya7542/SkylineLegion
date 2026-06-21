@@ -127,6 +127,20 @@ The revised implementation preserves the selected concept's portrait composition
 - Production build passed; remaining build warning is the existing large vendor chunk warning.
 - Evidence screenshots: `F:/Users/Yoru17/Documents/Git项目/SkylineLegion/output/playwright/v5.4-final-autopilot.png`, `F:/Users/Yoru17/Documents/Git项目/SkylineLegion/output/playwright/v5.4-pause-restart.png`.
 
+## v5.5 gate blocking and Boss targeting verification
+
+- Removed the v5.4 player-side gate charging restriction. Current-region gates again block bullets based on bullet impact side, so standing center can naturally charge both gates.
+- Seeded gate generation no longer fixes red gates on the left and blue gates on the right. Gate sampling across seeds showed rewards on both left and right sides.
+- Final gate pair now supports two negative red choices. Verification run resolved the final right gate at `-9` while the left gate remained `-80`.
+- Gate sample for seed `1`: gate 1 left `+6` / right `-10`, gate 2 left `-36` / right `+34`, gate 3 left `+53` / right `-76`, final gate left `-85` / right `-37`.
+- Boss projectile targeting now records `targetSource: front-troop`; the autoPilot run recorded all five Boss shots targeting front troops.
+- Boss projectile radius was reduced from v5.4's roughly `1.5-1.85` range to `0.76-0.93` in the verified run.
+- Full autoPilot verification won with peak troops `158`, Boss start troops `90`, final troops `61`, and Boss duration `10.87s`.
+- Boss projectile group losses after the radius reduction were `0/2/5/6/7`, with max single blast loss `7`.
+- Browser verification reported zero runtime errors. Remaining console warnings are the existing Three.js Clock deprecation and shader precision warnings.
+- Production build passed; remaining build warning is the existing large vendor chunk warning.
+- Evidence screenshot: `F:/Users/Yoru17/Documents/Git项目/SkylineLegion/output/playwright/v5.5-autopilot.png`.
+
 ## Required fidelity surfaces
 
 - Fonts and typography: system display and Chinese UI fallbacks render consistently without external font requests.
