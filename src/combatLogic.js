@@ -1,32 +1,113 @@
 const clampLocal = (value, min, max) => Math.max(min, Math.min(max, value));
 
-const NORMAL_VISUAL_POWER = 0.012;
-const RAPID_VISUAL_POWER = 0.018;
+const SHOOTER_BLOCK_X = 0.34;
+const SHOOTER_BLOCK_Z = 0.18;
+const ENEMY_CLUSTER_RADIUS = 0.38;
+const ENEMY_CLUSTER_LIMIT_X = 2.28;
+const ENEMY_CLUSTER_MIN_Z_OFFSET = -1.35;
+const ENEMY_CLUSTER_MAX_Z_OFFSET = 4.4;
 
-export function getVolleyShooterPlan(activeShooters, troopCount, rapid) {
+const dampLocal = (current, target, smoothing, delta) =>
+  current + (target - current) * (1 - Math.exp(-smoothing * delta));
+
+export function getInitialShotOffset(index) {
+  const value = Math.sin((index + 1) * 12.9898) * 43758.5453;
+  return (value - Math.floor(value)) * 0.2;
+}
+
+export function isShooterUnblocked(shooter, shooters) {
+  return !shooters.some((other) => {
+    if (other === shooter) return false;
+    if (other.active === false || other.dying || (other.scale ?? 1) < 0.72) return false;
+    const ahead = other.z < shooter.z - SHOOTER_BLOCK_Z;
+    return ahead && Math.abs(other.x - shooter.x) <= SHOOTER_BLOCK_X;
+  });
+}
+
+export function getVolleyShooterPlan(activeShooters, troopCount, rapid, time = 0) {
   if (!activeShooters.length || troopCount <= 0) return [];
-  const sorted = [...activeShooters].sort((a, b) => a.x - b.x);
-  const damageCount = clampLocal(
-    1 + Math.floor((troopCount - 1) / 12),
-    1,
-    rapid ? 16 : 12,
-  );
-  const damagingSlots = new Set(
-    Array.from(
-      { length: Math.min(damageCount, sorted.length) },
-      (_, index) =>
-        Math.round((index / Math.max(1, damageCount - 1)) * (sorted.length - 1)),
-    ),
-  );
-
-  return sorted.map((shooter, index) => ({
+  const sorted = [...activeShooters].sort((a, b) => a.x - b.x || a.z - b.z);
+  return sorted.filter((shooter) =>
+    isShooterUnblocked(shooter, sorted) &&
+    (shooter.nextShotAt ?? 0) <= time,
+  ).map((shooter) => ({
     shooter,
-    power: damagingSlots.has(index)
-      ? 1
-      : rapid
-        ? RAPID_VISUAL_POWER
-        : NORMAL_VISUAL_POWER,
+    power: 1,
   }));
+}
+
+export function applyGateBulletHit(gateState, side, bullet) {
+  const valueKey = `${side}Value`;
+  const chargeKey = `${side}Charge`;
+  const increase = bullet.heavy ? 2 : 1;
+  gateState[valueKey] = clampLocal(
+    gateState[valueKey] + increase,
+    -99,
+    bullet.maxValue ?? 999,
+  );
+  gateState[chargeKey] = 0;
+  return { increase, value: gateState[valueKey] };
+}
+
+export function stepEnemyCluster({
+  enemies,
+  waveState,
+  delta,
+  targetCenterX = 0,
+  alerted = false,
+}) {
+  const centerTarget = alerted ? clampLocal(targetCenterX, -0.72, 0.72) : 0;
+  waveState.centerX = dampLocal(waveState.centerX ?? 0, centerTarget, alerted ? 2.8 : 4.4, delta);
+  const alive = enemies.filter((enemy) => enemy.alive);
+
+  alive.forEach((enemy) => {
+    const homeX = enemy.homeX ?? enemy.x ?? enemy.currentX ?? 0;
+    const homeZOffset = enemy.homeZOffset ?? enemy.zOffset ?? 0;
+    const targetX = (waveState.centerX ?? 0) + homeX;
+    const targetZOffset = homeZOffset;
+    enemy.localVx = (enemy.localVx ?? 0) + (targetX - (enemy.currentX ?? homeX)) * 10.5 * delta;
+    enemy.localVz = (enemy.localVz ?? 0) + (targetZOffset - enemy.zOffset) * 9.2 * delta;
+    enemy.localVx *= Math.exp(-5.7 * delta);
+    enemy.localVz *= Math.exp(-5.4 * delta);
+    enemy.currentX = (enemy.currentX ?? homeX) + enemy.localVx * delta;
+    enemy.zOffset += enemy.localVz * delta;
+  });
+
+  for (let iteration = 0; iteration < 5; iteration += 1) {
+    for (let index = 0; index < alive.length; index += 1) {
+      const enemy = alive[index];
+      for (let otherIndex = 0; otherIndex < index; otherIndex += 1) {
+        const other = alive[otherIndex];
+        let dx = enemy.currentX - other.currentX;
+        let dz = enemy.zOffset - other.zOffset;
+        let distanceSq = dx * dx + dz * dz;
+        if (distanceSq >= ENEMY_CLUSTER_RADIUS * ENEMY_CLUSTER_RADIUS) continue;
+        if (distanceSq < 0.0001) {
+          const angle = ((enemy.id ?? index) * 2.399 + iteration * 0.73) % (Math.PI * 2);
+          dx = Math.cos(angle) * 0.02;
+          dz = Math.sin(angle) * 0.02;
+          distanceSq = dx * dx + dz * dz;
+        }
+        const distance = Math.sqrt(distanceSq);
+        const push = (ENEMY_CLUSTER_RADIUS - distance) * 0.52;
+        const nx = dx / distance;
+        const nz = dz / distance;
+        enemy.currentX += nx * push;
+        enemy.zOffset += nz * push;
+        other.currentX -= nx * push;
+        other.zOffset -= nz * push;
+      }
+    }
+  }
+
+  alive.forEach((enemy) => {
+    enemy.currentX = clampLocal(enemy.currentX, -ENEMY_CLUSTER_LIMIT_X, ENEMY_CLUSTER_LIMIT_X);
+    enemy.zOffset = clampLocal(
+      enemy.zOffset,
+      ENEMY_CLUSTER_MIN_Z_OFFSET,
+      ENEMY_CLUSTER_MAX_Z_OFFSET,
+    );
+  });
 }
 
 export function getCombatStageSnapshot({

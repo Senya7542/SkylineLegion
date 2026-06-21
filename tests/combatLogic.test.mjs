@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyGateBulletHit,
   findBulletCollisionTarget,
   findEnemySplashTargets,
   getCombatStageSnapshot,
   getVolleyShooterPlan,
+  stepEnemyCluster,
 } from "../src/combatLogic.js";
 
 const makeGateState = (overrides = {}) => ({
@@ -66,13 +68,49 @@ test("unresolved gate blocks bullets by physical intersection regardless of stal
   assert.equal(target?.side, "right");
 });
 
-test("volley shooter plan keeps a visual projectile for every visible shooter", () => {
-  const shooters = Array.from({ length: 37 }, (_, index) => ({ index }));
-  const plan = getVolleyShooterPlan(shooters, 37, false);
+test("volley shooter plan selects only unblocked outer/front shooters", () => {
+  const shooters = [
+    { index: 1, x: 0, z: 2.0, nextShotAt: 0 },
+    { index: 2, x: 0.05, z: 2.45, nextShotAt: 0 },
+    { index: 3, x: -0.72, z: 2.75, nextShotAt: 0 },
+    { index: 4, x: 0.72, z: 2.75, nextShotAt: 0 },
+    { index: 5, x: 0.02, z: 3.05, nextShotAt: 0 },
+  ];
+  const plan = getVolleyShooterPlan(shooters, 5, false, 1);
 
-  assert.equal(plan.length, 37);
-  assert.equal(plan.filter((item) => item.power >= 1).length, 4);
-  assert.equal(plan.filter((item) => item.power > 0 && item.power < 1).length, 33);
+  assert.deepEqual(
+    plan.map((item) => item.shooter.index),
+    [3, 1, 4],
+  );
+  assert.equal(plan.every((item) => item.power === 1), true);
+});
+
+test("volley shooter plan respects initial shot offset timing", () => {
+  const shooters = [
+    { index: 1, x: -0.5, z: 2.4, nextShotAt: 0.12 },
+    { index: 2, x: 0.5, z: 2.4, nextShotAt: 0.18 },
+  ];
+
+  assert.deepEqual(
+    getVolleyShooterPlan(shooters, 2, false, 0.1).map((item) => item.shooter.index),
+    [],
+  );
+  assert.deepEqual(
+    getVolleyShooterPlan(shooters, 2, false, 0.13).map((item) => item.shooter.index),
+    [1],
+  );
+});
+
+test("normal gate bullet increases the hit side by exactly one", () => {
+  const gateState = makeGateState({ rightValue: 15, rightCharge: 0.75 });
+  const result = applyGateBulletHit(gateState, "right", {
+    heavy: false,
+    power: 1,
+  });
+
+  assert.equal(gateState.rightValue, 16);
+  assert.equal(gateState.rightCharge, 0);
+  assert.equal(result.increase, 1);
 });
 
 test("heavy player shells collect all enemies inside an impact radius", () => {
@@ -137,4 +175,39 @@ test("combat stage reports boss after track end even when a wave has stragglers"
   });
 
   assert.deepEqual(stage, { regionIndex: 1, phase: "boss" });
+});
+
+test("enemy cluster physics separates overlapping alive enemies", () => {
+  const enemies = [
+    {
+      id: 1,
+      alive: true,
+      currentX: 0,
+      zOffset: 0,
+      homeX: 0,
+      homeZOffset: 0,
+    },
+    {
+      id: 2,
+      alive: true,
+      currentX: 0.02,
+      zOffset: 0.01,
+      homeX: 0.02,
+      homeZOffset: 0.01,
+    },
+  ];
+
+  stepEnemyCluster({
+    enemies,
+    waveState: { centerX: 0 },
+    delta: 1 / 60,
+    targetCenterX: 0,
+    alerted: true,
+  });
+
+  const distance = Math.hypot(
+    enemies[0].currentX - enemies[1].currentX,
+    enemies[0].zOffset - enemies[1].zOffset,
+  );
+  assert.equal(distance >= 0.38, true);
 });

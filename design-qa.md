@@ -16,6 +16,34 @@
   - `output/playwright/v3-victory.png`
 - Tested states: menu, gate charging, wave combat, pause/resume, muted audio, drone upgrade, Boss combat, victory, replay, local high score.
 
+## v5.8 exposed shooters, real gate bullets and enemy cluster physics verification
+
+- Source feedback: user requested hiding the dev panel from normal play, replacing all-soldier visual fire with real outer/front shooters, making gates grow by exactly one per real bullet, and giving enemy troops physical clustering like the player formation.
+- Implementation URL: `http://127.0.0.1:4180/`
+- Automated verification screenshot: `output/playwright/v5.8-autopilot.png`.
+
+### Findings and patches
+
+- [Fixed P1] v5.7 made every visible soldier fire weak visual bullets, which felt fake. Volley selection now only chooses unblocked outer/front soldiers; every spawned normal bullet is real `power: 1`.
+- [Fixed P1] Gate charge still used fractional power and `shotsPerPoint`. A normal bullet now increases the hit side by exactly `+1`; heavy cannon shells count as heavier special shots.
+- [Fixed P1] Enemy units could visually stack because they tracked targets individually without pair separation. Enemy waves now spawn around a circular home cluster, keep local velocity, separate against nearby enemies, and move as a group center.
+- [Fixed P2] The dev panel is hidden during normal play. `window.__SKYLINE_DEBUG__` still exposes seed, gates, bullet stats, exposed shooter count and enemy spacing for debugging; the panel only appears with `?flags=devPanel`.
+- [Fixed P2] Enemy HP was reduced to match the new separated cluster read, so a visible enemy is less likely to feel like several overlapped enemies pretending to be one target.
+
+### Verification
+
+- Logic tests: `node --test tests/combatLogic.test.mjs` passed `9/9`.
+- Production build: passed. Vite still reports the existing large vendor chunk warning.
+- Browser run: dev panel count stayed `0` in menu and gameplay without `devPanel`; debug state remained available.
+- Browser run: all sampled bullets were real (`visual: 0`), later waves kept enemy spacing around `0.38`, and the full auto-pilot run completed with Boss duration `10.25s`.
+- Observed balance note: with true `+1` gate bullets, later positive gates can climb high (`+74`, `+115` in the sample seed), so the next tuning pass should adjust shooter cadence and/or gate starting values.
+
+### Follow-up polish
+
+- P1: retune gate starting values and shooter cadence around the new true-bullet economy.
+- P2: add an explicit debug toggle in a settings modal only if manual QA needs it; for now URL flag access is enough.
+- P2: tune enemy cluster radius per wave so early waves are looser and late waves feel denser without overlapping.
+
 ## v5.7 projectile density, physical collision, debug panel and player AoE verification
 
 - Source feedback: user reported that projectile lanes felt fake and too sparse, restart runs could pass later gates and then bullets would appear to miss enemies/gates, requested a live tuning panel, and asked for player aircraft shells to use AoE damage.

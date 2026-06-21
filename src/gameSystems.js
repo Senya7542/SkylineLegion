@@ -1,4 +1,5 @@
 import { clamp, MAX_VISIBLE_TROOPS } from "./gameConfig.js";
+import { getInitialShotOffset } from "./combatLogic.js";
 
 const PLAYER_CENTER_Z = 3.05;
 const PLAYER_RADIUS = 0.205;
@@ -29,6 +30,8 @@ export function createArmyUnit(index) {
     dying: false,
     rotation: 0,
     spin: 0,
+    shotOffset: getInitialShotOffset(index),
+    nextShotAt: 0,
   };
 }
 
@@ -122,6 +125,8 @@ export function updateArmyUnits(units, count, time, delta) {
         unit.hitAt = -10;
         unit.rotation = 0;
         unit.spin = 0;
+        unit.shotOffset = getInitialShotOffset(unit.index);
+        unit.nextShotAt = time + unit.shotOffset;
       });
   }
   const activeUnits = units.filter((unit) => unit.active && !unit.dying);
@@ -251,17 +256,21 @@ export function chooseEnemyTarget(waves, waveStates, shooterX, distance, regionI
 }
 
 export function createEnemy(wave, waveIndex, index) {
-  const columns = 10;
-  const row = Math.floor(index / columns);
-  const col = index % columns;
-  const x = (col - (columns - 1) / 2) * 0.43 + (row % 2 ? 0.21 : 0);
+  const angle = index * 2.3999632297;
+  const radius = 0.18 + Math.sqrt(index) * 0.145;
+  const x = clamp(Math.cos(angle) * radius, -2.05, 2.05);
+  const zOffset = clamp(Math.sin(angle) * radius + Math.sqrt(index) * 0.035, -1.0, 3.8);
   return {
     id: waveIndex * 100 + index,
     waveZ: wave.z,
     x,
+    homeX: x,
     currentX: x,
-    zOffset: row * 0.46,
-    hp: 2 + Math.floor(waveIndex / 2),
+    zOffset,
+    homeZOffset: zOffset,
+    localVx: 0,
+    localVz: 0,
+    hp: 1 + Math.floor(waveIndex / 2),
     alive: true,
     hitAt: -10,
     deathAt: -10,

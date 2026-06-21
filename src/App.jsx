@@ -46,10 +46,13 @@ import {
   updateArmyUnits,
 } from "./gameSystems.js";
 import {
+  applyGateBulletHit,
   findBulletCollisionTarget,
   findEnemySplashTargets,
   getCombatStageSnapshot,
+  getInitialShotOffset,
   getVolleyShooterPlan,
+  stepEnemyCluster,
 } from "./combatLogic.js";
 import { ENTITY_VISUALS } from "./entityVisuals.js";
 
@@ -81,6 +84,7 @@ const DEBUG_BOSS_TEST = DEBUG_FLAGS.has("bossTest");
 const DEBUG_BOSS_PIN = DEBUG_FLAGS.has("bossPin");
 const DEBUG_ENEMY_RUSH = DEBUG_FLAGS.has("enemyRush");
 const DEBUG_AUTO_PILOT = DEBUG_FLAGS.has("autoPilot");
+const DEBUG_SHOW_DEV_PANEL = DEBUG_FLAGS.has("devPanel");
 const MAX_BOSS_PROJECTILES = 36;
 const BOSS_MAX_HEALTH = 76;
 const PLAYER_HEAVY_SPLASH_RADIUS = 0.82;
@@ -2024,6 +2028,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       alerted: false,
       alertedAt: -10,
       advance: 0,
+      centerX: 0,
     })),
   );
   const waveEnemies = useRef(
@@ -2153,7 +2158,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     });
   };
 
-  const spawnVolley = (rapid) => {
+  const spawnVolley = (rapid, time) => {
     const stage = getCombatStage();
     const activeShooters = armyUnits.current.filter(
       (unit) => unit.active && !unit.dying && unit.scale > 0.72,
@@ -2163,7 +2168,9 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       activeShooters,
       troops.current,
       rapid,
+      time,
     );
+    if (!shooterPlan.length) return;
     shooterPlan.forEach(({ shooter, power }, index) => {
       const bullet = bullets.current.find((item) => !item.active);
       if (!bullet) return;
@@ -2190,6 +2197,10 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       bullet.regionIndex = stage.regionIndex;
       bullet.phase = stage.phase;
       bullet.life = stage.phase === "travel" ? 0.92 : rapid ? 1.12 : 1.34;
+      shooter.nextShotAt =
+        time +
+        (rapid ? 0.22 : 0.34) +
+        getInitialShotOffset(shooter.index) * 0.38;
     });
     const muzzle = activeShooters[Math.floor(activeShooters.length / 2)];
     if (muzzle) {
@@ -2489,32 +2500,12 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           waveState.advance +=
             delta * wave.speed * pressure * (DEBUG_ENEMY_RUSH ? 3.5 : 1);
         }
-        waveEnemies.current[waveIndex].forEach((enemy) => {
-          if (!enemy.alive) return;
-          const renderZ =
-            distance.current -
-            wave.z -
-            enemy.zOffset +
-            waveState.advance;
-          let targetX = enemy.x + (waveState.alerted ? playerX.current * 0.2 : 0);
-          if (waveState.alerted && renderZ > -10) {
-            const nearest = armyUnits.current
-              .filter((unit) => unit.active && !unit.dying)
-              .reduce((best, unit) => {
-                const worldX = playerX.current + unit.x;
-                const distanceToEnemy = Math.abs(worldX - enemy.currentX);
-                return !best || distanceToEnemy < best.distance
-                  ? { x: worldX, distance: distanceToEnemy }
-                  : best;
-              }, null);
-            if (nearest) targetX = nearest.x;
-          }
-          enemy.currentX = THREE.MathUtils.damp(
-            enemy.currentX,
-            targetX,
-            waveState.alerted ? 3.4 : 4.5,
-            delta,
-          );
+        stepEnemyCluster({
+          enemies: waveEnemies.current[waveIndex],
+          waveState,
+          delta,
+          targetCenterX: playerX.current * 0.42,
+          alerted: waveState.alerted,
         });
       });
 
@@ -2522,8 +2513,8 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
         shotTimer.current -= delta;
         heavyShotTimer.current -= delta;
         if (shotTimer.current <= 0) {
-          spawnVolley(rapidRef.current);
-          shotTimer.current = rapidRef.current ? 0.11 : 0.18;
+          spawnVolley(rapidRef.current, state.clock.elapsedTime);
+          shotTimer.current = rapidRef.current ? 0.035 : 0.045;
         }
         if (heavyShotTimer.current <= 0) {
           spawnHeavyShot(state.clock.elapsedTime);
@@ -2576,21 +2567,10 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           const gateState = gateStates.current[target.gateIndex];
           const gate = gates[target.gateIndex];
           const valueKey = `${target.side}Value`;
-          const chargeKey = `${target.side}Charge`;
-          const chargeWeight = bullet.heavy ? 2.6 : bullet.power ?? 1;
-          gateState[chargeKey] += chargeWeight;
-          let increase = 0;
-          while (gateState[chargeKey] >= gate.shotsPerPoint) {
-            gateState[chargeKey] -= gate.shotsPerPoint;
-            increase += 1;
-          }
-          if (increase > 0) {
-            gateState[valueKey] = clamp(
-              gateState[valueKey] + increase,
-              -99,
-              gate.maxValue,
-            );
-          }
+          applyGateBulletHit(gateState, target.side, {
+            ...bullet,
+            maxValue: gate.maxValue,
+          });
           gateState[`${target.side}Hit`] = 1;
           spawnImpact(
             collisionX,
@@ -3065,8 +3045,14 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       const activeArmyUnits = armyUnits.current.filter(
         (unit) => unit.active && !unit.dying,
       );
-      const shooterCount = activeArmyUnits.filter(
+      const readyUnitCount = activeArmyUnits.filter(
         (unit) => unit.scale > 0.72,
+      );
+      const exposedShooterCount = getVolleyShooterPlan(
+        readyUnitCount,
+        troops.current,
+        rapidRef.current,
+        state.clock.elapsedTime,
       ).length;
       const bulletStats = bullets.current.reduce(
         (stats, bullet) => {
@@ -3084,6 +3070,23 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       const aliveByWave = waveEnemies.current.map(
         (wave) => wave.filter((enemy) => enemy.alive).length,
       );
+      const enemySpacingByWave = waveEnemies.current.map((wave) => {
+        const alive = wave.filter((enemy) => enemy.alive);
+        if (alive.length < 2) return null;
+        let minDistance = Infinity;
+        for (let index = 0; index < alive.length; index += 1) {
+          for (let otherIndex = 0; otherIndex < index; otherIndex += 1) {
+            minDistance = Math.min(
+              minDistance,
+              Math.hypot(
+                alive[index].currentX - alive[otherIndex].currentX,
+                alive[index].zOffset - alive[otherIndex].zOffset,
+              ),
+            );
+          }
+        }
+        return Number(minDistance.toFixed(2));
+      });
       const bossDuration =
         bossStartedAt.current == null
           ? 0
@@ -3097,10 +3100,12 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
             combatStage: stage,
             troops: troops.current,
             visibleUnits: activeArmyUnits.length,
-            shooterCount,
+            readyUnitCount: readyUnitCount.length,
+            shooterCount: exposedShooterCount,
             bulletStats,
             gateStates: gateStates.current.map((gate) => ({ ...gate })),
             aliveByWave,
+            enemySpacingByWave,
             bossDuration: Number(Math.max(0, bossDuration).toFixed(2)),
             bossHp: Number(bossHealth.current.toFixed(1)),
             bossActive: bossActive.current,
@@ -3312,7 +3317,7 @@ function HUD({ data, status, sound, onPause, onSound, onFullscreen }) {
 
 function DevPanel({ data }) {
   const debug = data.debugData;
-  if (!import.meta.env.DEV || !debug) return null;
+  if (!import.meta.env.DEV || !DEBUG_SHOW_DEV_PANEL || !debug) return null;
   const gates = debug.gateStates
     .map(
       (gate, index) =>
