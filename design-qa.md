@@ -208,6 +208,220 @@ The revised implementation preserves the selected concept's portrait composition
 
 final result: passed
 
+## v5.1 gate-hit accounting, v5 camera backdrop and procedural mech kit verification
+
+- Source feedback: user reported gate values barely grew despite many bullets, suspected the gate should count received bullet hits rather than per-shooter cadence; also reported final-region bullets passing through enemies/Boss. User then requested autonomous overnight polish for the new generated background and procedural low-poly character/Boss style.
+- Generated background asset: `game/public/assets/skyline-backdrop-v3.png`.
+- Generated character reference: `game/public/assets/references/lowpoly-unit-style-v1.png`.
+- Active gameplay screenshot evidence: `game/.playwright-cli/page-2026-06-20T19-19-11-751Z.png`.
+- Boss visual screenshot evidence: `game/.playwright-cli/page-2026-06-20T19-37-51-855Z.png`.
+
+### Findings and patches
+
+- [Fixed P1] Gate growth was throttled by a `chargePower` cadence layer, so many visible bullets hit gates without changing values. This layer was removed. Gate value growth now belongs to the gate: every normal bullet hit contributes `1`, heavy shots contribute `2`.
+- [Fixed P1] Later gate thresholds made the game feel too punishing after the visual-fire change. All gate templates now use `shotsPerPoint: 1`, matching the requested "one bullet equals one increment" test tuning.
+- [Fixed P1] Boss collision depended on `bullet.phase === "boss"`, so bullets could visually pass through Boss if the run state was still wave/gate flavored when Boss was active. Boss collision now checks whenever Boss is active and alive.
+- [Fixed P2] A new backdrop was generated for the v5.0 camera, with a clearer centered ocean/cloud corridor and horizon alignment for the glass runway. Runtime CSS now uses `skyline-backdrop-v3.png`.
+- [Fixed P2] A low-poly character style board was generated and saved as a reference asset. Friendly troops gained glowing cyan visors and darker boots; enemy troops gained orange visors and chest cores.
+- [Fixed P2] Boss readability was improved by moving twin cannons and the main weak-point core to the player-facing side, adding a glowing weak-point ring, and reducing the white-hit lerp so the Boss no longer becomes a white blob under sustained fire.
+- [Fixed P3] Debug workflow now supports comma-bundled flags such as `?flags=bossTest,bossPin`, avoiding Windows shell issues with `&`. `bossPin` now locks Boss health and pauses Boss attacks for stable visual QA.
+
+### Verification
+
+- Production build: passed.
+- `git diff --check`: passed, with only LF-to-CRLF warnings from Git on touched files.
+- Gate accounting debug: no-enemy dev run produced clearly increased gate values (`30/32`, `42/42`, etc.) and recorded Boss hits after the phase-independent collision change.
+- Browser console: zero runtime errors in normal gameplay and Boss visual checks; remaining messages are Three.js warnings.
+- Visual check: background v3 aligns the central sea/cloud corridor better with the glass runway, normal gameplay remains readable, enemy/friendly squads now read more like stylized chibi mechs, and Boss weak point/twin cannons are visible without washing to white.
+
+### Follow-up polish
+
+- P1: playtest full normal difficulty after the `1 bullet = +1` gate tuning; it is intentionally easier now and may need later max-value/initial-value balancing.
+- P2: troop silhouettes are improved but still tiny in dense crowds; next pass can slightly enlarge heads/visors or add a thin dark underlay for mobile readability.
+- P2: Boss now reads as a procedural mecha core, but authored animation/model replacement would still be the biggest future fidelity upgrade.
+
+final result: passed
+
+## v5.0 camera perspective pass for runway-horizon alignment
+
+- Source feedback: user compared the new generated backdrop against the live game screenshot and noted the road vanishing point was still too far from the backdrop horizon/sea line.
+- Active gameplay screenshot evidence: `game/.playwright-cli/page-2026-06-20T15-01-05-467Z.png`.
+- Viewport/state: portrait gameplay capture in a non-headed Playwright CLI session against `http://127.0.0.1:4180/`.
+
+### Findings and patches
+
+- [Fixed P1] The gameplay camera's road vanishing point sat too high relative to the generated backdrop's cloud-ocean horizon. The camera pitch was reduced, the camera was moved slightly back/lower, and FOV was narrowed from `49` to `43`.
+- [Fixed P2] This preserves a readable TopWar-style lane while making the road edges converge closer to the background's mid-frame sky corridor.
+
+### Verification
+
+- Production build: passed.
+- `git diff --check`: passed, with only LF-to-CRLF warnings from Git on touched files.
+- Browser console: zero runtime errors in menu and active-game checks; remaining messages are Three.js warnings.
+- Visual check: the glass runway now visually points nearer to the backdrop's central cloud/sea corridor instead of terminating too high in the sky.
+
+### Follow-up polish
+
+- P1: generate a new background variant using this v5.0 camera as the fixed target, with the horizon/central corridor explicitly aligned to the new road convergence point.
+- P2: after the new background lands, retest gate/enemy readability because the narrower FOV makes foreground aircraft and bullets feel slightly larger.
+
+final result: passed
+
+## v4.9 generated vanishing-point backdrop and procedural low-poly kit verification
+
+- Source feedback: user approved a three-step direction: procedural glass road/environment first, then procedural low-poly soldiers, then procedural low-poly Boss; avoid relying on external models for now.
+- Generated project asset: `game/public/assets/skyline-backdrop-v2.png`.
+- Active gameplay screenshot evidence: `game/.playwright-cli/page-2026-06-20T14-41-26-969Z.png`.
+- Viewport/state: portrait gameplay capture in a non-headed Playwright CLI session against `http://127.0.0.1:4180/`.
+
+### Findings and patches
+
+- [Fixed P1] The previous background was beautiful but did not reserve a clean gameplay vanishing corridor. A new 9:16 sky-utopia backdrop was generated with a central open cloud corridor and side-weighted towers/islands.
+- [Fixed P1] The CSS background now points to `skyline-backdrop-v2.png`, keeping the image as a real project asset instead of an external generated-image cache path.
+- [Fixed P2] Player troops looked too much like capsule placeholders. They now use a small procedural low-poly robot kit: angular torso, dodeca head, shoulder bar and longer gun silhouette.
+- [Fixed P2] Enemy troops looked like arbitrary geometry. They now use a matching low-poly red assault unit kit with angular body, octa head, shoulder bar and blocky base.
+- [Fixed P2] Boss geometry was too box-like. The Boss now has a more intentional modular mecha-core structure with a central low-poly core, forward twin cannons and side armor wings.
+
+### Verification
+
+- Production build: passed.
+- `git diff --check`: passed, with only LF-to-CRLF warnings from Git on touched files.
+- Browser console: zero runtime errors in menu and active-game checks; remaining messages are Three.js warnings.
+- Visual check: the new backdrop aligns better with the central glass-runway corridor, the road remains continuous, and player/enemy silhouettes are more intentionally low-poly.
+
+### Follow-up polish
+
+- P1: review the generated background in real play and decide whether to keep this v2 asset or generate a stricter variant with the horizon/vanishing point a little lower.
+- P2: player/enemy low-poly silhouettes may need slightly stronger outline/scale because individual units are still small at gameplay distance.
+- P2: capture a clean Boss-only debug shot after improving the internal debug URL flow; the current build passes, but the visual QA screenshot primarily covers normal gameplay.
+
+final result: passed
+
+## v4.8 continuous procedural glass runway verification
+
+- Source feedback: user liked the glass-runway direction but noticed the previous road was built from repeated chunks with visible seams and inconsistent widths; requested a more procedural low-poly asset approach before relying on external models.
+- Active gameplay screenshot evidence: `game/.playwright-cli/page-2026-06-20T14-30-33-300Z.png`.
+- Viewport/state: portrait gameplay capture in a non-headed Playwright CLI session against `http://127.0.0.1:4180/`.
+
+### Findings and patches
+
+- [Fixed P1] Road chunks were visually exposing their construction. The road is now a continuous procedural glass plane instead of repeated box slabs.
+- [Fixed P1] Chunk joins and tapering created visible seams and width inconsistencies. Side rails are now long continuous emissive strips; moving detail is limited to intentional lightweight guide markings.
+- [Fixed P2] Camera changes were starting to serve the background at the expense of gameplay framing. The gameplay camera was restored to the more stable baseline, leaving vanishing-point alignment to a future background image generated for this camera.
+
+### Verification
+
+- Production build: passed.
+- `git diff --check`: passed, with only LF-to-CRLF warnings from Git on touched files.
+- Browser console: zero runtime errors in menu and active-game checks; remaining messages are Three.js warnings.
+- Visual check: the road no longer shows repeated slab seams, the lane rails are continuous, and the gameplay framing is back to the stable camera baseline.
+
+### Follow-up polish
+
+- P1: generate a new 9:16 background image whose central horizon/sky corridor matches the restored gameplay camera's road vanishing point.
+- P2: create a procedural low-poly character kit for player soldiers, enemies and Boss so the asset language feels intentional rather than placeholder-like.
+
+final result: passed
+
+## v4.7 runway perspective and sky corridor verification
+
+- Source feedback: user annotated screenshot requesting the road vanishing point and camera perspective expose more of the beautiful forward sky/background.
+- Active gameplay screenshot evidence: `game/.playwright-cli/page-2026-06-20T14-06-36-204Z.png`.
+- Viewport/state: `405 x 720` portrait gameplay capture in a non-headed Playwright CLI session against `http://127.0.0.1:4180/`.
+
+### Findings and patches
+
+- [Fixed P1] The road was visually behaving like an opaque slab and covering the strongest part of the backdrop. Road panels now use a lighter glass-runway treatment with lower opacity, while cyan rails remain bright enough to preserve the play lane.
+- [Fixed P1] The road extended too far into the top of the frame. The visible segment count was reduced and the far segments now fade earlier, creating a clearer sky corridor toward the vanishing point.
+- [Fixed P2] Camera perspective was too flat/low for the new fixed backdrop. The camera was raised/backed off slightly and the look target moved farther forward, reducing the sense that the runway is pasted over the whole background.
+
+### Verification
+
+- Production build: passed.
+- `git diff --check`: passed, with only LF-to-CRLF warnings from Git on touched files.
+- Browser console: zero runtime errors in menu and active-game checks; remaining messages are Three.js warnings.
+- Visual check: the central cloud/sky background is now visible through the play corridor, the road reads more like a transparent sci-fi runway, and gates/enemies remain aligned to the lane.
+
+### Follow-up polish
+
+- P2: if gameplay readability drops in busier combat, increase near-road opacity slightly while keeping far-road fade.
+- P3: author a dedicated 9:16 background with the road corridor baked into the composition for an even cleaner reference-match.
+
+final result: passed
+
+## v4.6 strict portrait frame, fixed backdrop, projectile scale and sustained fire verification
+
+- Source feedback: latest 9:16 portrait screenshots and notes about background coverage, procedural side props, bullet size, firepower drop and visible Playwright windows.
+- Menu screenshot evidence: `game/.playwright-cli/page-2026-06-20T13-01-46-342Z.png`.
+- Active gameplay screenshot evidence: `game/.playwright-cli/page-2026-06-20T13-04-53-272Z.png`.
+- Viewport/state: `405 x 720` portrait viewport in a non-headed Playwright CLI session against `http://127.0.0.1:4180/`.
+
+### Findings and patches
+
+- [Fixed P1] Desktop layout could render as `500 x 950`, which is not a strict 9:16 portrait surface. The game shell now uses an aspect-ratio locked `9 / 16` frame capped by viewport height and width.
+- [Fixed P1] The fixed 3D backdrop plane did not cover the frame corners and fought with scene background color. The skyline image is now a CSS background on the shell, while the Three.js renderer clears transparently over it.
+- [Fixed P2] Procedural side islands and the floating ring made the fixed-camera backdrop feel inconsistent. Those world props were removed from the active scene so the authored background image owns the environment read.
+- [Fixed P2] Player bullets were too large. Projectile glow/core geometry and instance scale were reduced while retaining additive yellow readability.
+- [Fixed P2] Firepower dropped during gate-only moments because gate phases reduced volley count and cadence. Visual fire cadence now stays high; only a timed subset of bullets contributes to gate number growth so the gate does not inflate too fast.
+
+### Verification
+
+- Production build: passed.
+- `git diff --check`: passed, with only existing LF-to-CRLF warnings from Git on touched files.
+- Portrait metric check: `.game-shell` measured `405 x 720`, ratio `0.5625`; CSS background included `skyline-backdrop-v1.jpg`.
+- Browser console: zero runtime errors in menu and active-game checks; remaining messages are Three.js warnings.
+- Active screenshot check: background fills all corners, sky is visible, side procedural models are gone, bullets are smaller, and gate values no longer spike immediately despite sustained fire.
+
+### Follow-up polish
+
+- P2: full gameplay balance still needs a controlled playthrough with steering because the automated no-input run can lose before the boss.
+- P3: if the background feels too soft after this layout fix, replace `skyline-backdrop-v1.jpg` with a higher-resolution authored/generated 9:16 asset.
+- P3: corpse fade/knockback can be accelerated further to reduce the perception that dead enemies are blocking shots.
+
+final result: passed
+
+## v4.5 regional projectile logic, fixed backdrop, easier gates and Boss balance verification
+
+- Source visual truth: `C:/Users/Yoru17/AppData/Local/Temp/codex-clipboard-056adeb5-4625-4ab4-af6a-336bbb1b72d4.png`.
+- Implementation evidence: `game/.playwright-cli/page-2026-06-20T12-35-54-578Z.png`.
+- Full-run result evidence: `game/.playwright-cli/page-2026-06-20T12-35-10-617Z.png`.
+- Viewport/state: active gameplay and full result state in local browser at `http://127.0.0.1:4175/`.
+- Focused region evidence: debug state from `window.__SKYLINE_DEBUG__` after a complete run.
+
+### Findings and patches
+
+- [Fixed P1] During wave combat, bullets could no longer interact with the next gate in the same region. Wave-phase bullets can now hit current-region enemies and the same region's following gate, while still blocking interaction with later regions.
+- [Fixed P1] Later-area bullets appeared to miss enemies too often. Normal projectile hit radius and heavy-shot steering were increased so side and rear rows are hit more reliably.
+- [Fixed P1] Gate charging was too punishing. Gate thresholds are now region 1 = 1 shot per +1, regions 2/3 = 2 shots per +1, region 4 = 3 shots per +1; heavy cannon counts as 2 shots.
+- [Fixed P1] Boss damage made the game effectively unwinnable after the AoE update. Boss health, projectile radius, hit cap, volley cadence and shockwave cadence were tuned so the boss remains threatening but a clean run can win.
+- [Fixed P2] The sky-sphere background was too blurry for a fixed camera. A portrait fixed-camera backdrop was generated and added as `game/public/assets/skyline-backdrop-v1.jpg`; the old panorama remains only as low-strength environment lighting.
+- [Fixed P2] Upgrade yellow and projectiles were not bright enough. Upgrade feedback now completes faster and pushes the shader toward a brighter yellow emission-style peak; bullets use larger additive yellow glows.
+- [Fixed P2] Death grey read too close to black. Player and enemy death grey colors were lifted to lighter grey values.
+
+### Required fidelity surfaces
+
+- Fonts and typography: no typography regressions observed; HUD and result states remain readable.
+- Spacing and layout rhythm: the fixed backdrop preserves a clear central play corridor and keeps high-detail islands to the side thirds.
+- Colors and visual tokens: bullets and upgrade feedback are brighter yellow; death feedback is lighter grey; gate colors remain semantic red/blue.
+- Image quality and asset fidelity: the fixed portrait backdrop is visibly sharper than the previous equirectangular sky in the fixed camera view. It still does not replace authored 3D environment props, but it better matches the requested TopWar-style fantasy sci-fi setting.
+- Copy and content: score, combo, gate values, troop count and result copy remain coherent.
+
+### Verification
+
+- Production build: passed.
+- Browser console: zero runtime errors. Remaining messages are React DevTools info, Three.js deprecation warnings and Playwright reload context-lost logs.
+- Complete run: passed with `MISSION COMPLETE`, `19` survivors, combo `x9`, score `31,375`.
+- Regional bullet logic: complete-run debug showed all four waves cleared and gates charged/resolved in sequence without later-region cross-hits.
+- Dead-enemy collision audit: code paths filter `!enemy.alive` in target selection and bullet collision, so killed enemies stop blocking projectile collision immediately; remaining corpse visuals are visual-only.
+
+### Follow-up polish
+
+- P3: upgrade glow may now be slightly too broad visually; if desired, constrain the strongest yellow to newly spawned troops only.
+- P3: corpse visuals can be made more transparent or launched farther to reduce the perception that dead units are still blocking bullets.
+- P3: replace procedural soldiers/Boss/aircraft with authored GLB assets for a major fidelity step.
+
+final result: passed
+
 ## v4.4 shader feedback, gate pacing, Boss AoE and 4K sky verification
 
 - Source visual truth: `C:/Users/Yoru17/AppData/Local/Temp/codex-clipboard-056adeb5-4625-4ab4-af6a-336bbb1b72d4.png`.

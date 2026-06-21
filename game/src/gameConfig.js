@@ -8,17 +8,17 @@ export const MAX_IMPACTS = 40;
 export const MAX_VISIBLE_TROOPS = 96;
 
 const GATE_TEMPLATES = [
-  { z: 28, left: [-9, -4], right: [1, 5], shotsPerPoint: 1.5 },
-  { z: 67, left: [-16, -9], right: [-2, 4], shotsPerPoint: 2.5 },
-  { z: 108, left: [-25, -16], right: [-9, 0], shotsPerPoint: 3.5 },
-  { z: 145, left: [-36, -25], right: [-16, -5], shotsPerPoint: 4.5 },
+  { z: 28, left: [-8, -4], right: [2, 6], shotsPerPoint: 1 },
+  { z: 67, left: [-11, -5], right: [0, 6], shotsPerPoint: 1 },
+  { z: 108, left: [-15, -8], right: [-3, 5], shotsPerPoint: 1 },
+  { z: 145, left: [-18, -10], right: [-4, 4], shotsPerPoint: 1 },
 ];
 
 export const WAVES = [
   { z: 54, count: 40, speed: 1.9, gateIndex: 0 },
   { z: 94, count: 58, speed: 2.2, gateIndex: 1 },
-  { z: 135, count: 78, speed: 2.5, gateIndex: 2 },
-  { z: 166, count: 104, speed: 2.8, gateIndex: 3 },
+  { z: 135, count: 74, speed: 2.5, gateIndex: 2 },
+  { z: 166, count: 90, speed: 2.8, gateIndex: 3 },
 ];
 
 const seeded = (seed) => {
