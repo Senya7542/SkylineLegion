@@ -70,6 +70,8 @@ const DEBUG_BOSS_TEST = DEBUG_FLAGS.has("bossTest");
 const DEBUG_BOSS_PIN = DEBUG_FLAGS.has("bossPin");
 const DEBUG_ENEMY_RUSH = DEBUG_FLAGS.has("enemyRush");
 const MAX_BOSS_PROJECTILES = 36;
+const BOOT_MIN_DURATION = 720;
+const INTRO_DURATION = 920;
 const FEEDBACK_COLOR_ATTRIBUTE = "instanceFeedback";
 const FEEDBACK_GREY_ATTRIBUTE = "instanceGrey";
 const assetUrl = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
@@ -299,7 +301,6 @@ function Army({ troopsRef, unitsRef, upgradePulseRef, active }) {
   }, []);
 
   useFrame((state, delta) => {
-    if (!active) return;
     if (
       !bodies.current ||
       !heads.current ||
@@ -323,7 +324,7 @@ function Army({ troopsRef, unitsRef, upgradePulseRef, active }) {
       });
     }
     previousCount.current = count;
-    updateArmyUnits(unitsRef.current, count, time, delta);
+    updateArmyUnits(unitsRef.current, count, time, active ? delta : Math.min(delta, 0.012));
 
     unitsRef.current.forEach((unit, index) => {
       if (!unit.active) {
@@ -637,6 +638,7 @@ function PlayerRig({
   unitsRef,
   upgradePulseRef,
   cannonPulseRef,
+  introProgressRef,
   active,
 }) {
   const ref = useRef();
@@ -648,6 +650,21 @@ function PlayerRig({
       28,
       delta,
     );
+    const intro = introProgressRef?.current ?? 1;
+    const eased = THREE.MathUtils.smoothstep(intro, 0, 1);
+    ref.current.position.y = THREE.MathUtils.damp(
+      ref.current.position.y,
+      -0.9 * (1 - eased),
+      12,
+      delta,
+    );
+    ref.current.position.z = THREE.MathUtils.damp(
+      ref.current.position.z,
+      0.75 * (1 - eased),
+      12,
+      delta,
+    );
+    ref.current.scale.setScalar(0.92 + eased * 0.08);
   });
   return (
     <group ref={ref}>
@@ -1006,6 +1023,7 @@ function Gate({
   distanceRef,
   playerXRef,
   stateRef,
+  introProgressRef,
 }) {
   const group = useRef();
   const panel = useRef();
@@ -1027,15 +1045,16 @@ function Gate({
     stateRef[`${side}Hit`] = Math.max(0, hit - delta * 5.5);
     const bounce = hit > 0 ? Math.sin(hit * Math.PI) * 0.18 : 0;
     const vanish = disappearing ? clamp(resolvedAge / 0.32, 0, 1) : 0;
-    group.current.position.z = renderZ;
+    const intro = THREE.MathUtils.smoothstep(introProgressRef?.current ?? 1, 0, 1);
+    group.current.position.z = renderZ - (1 - intro) * 3.2;
     group.current.visible =
-      renderZ > -72 && renderZ < 7 && (!stateRef.resolved || vanish < 1);
+      intro > 0.02 && renderZ > -72 && renderZ < 7 && (!stateRef.resolved || vanish < 1);
     group.current.scale.set(
-      (1 + bounce) * (1 - vanish * 0.7),
-      (1 - bounce * 0.55) * (1 - vanish),
-      1,
+      (1 + bounce) * (1 - vanish * 0.7) * (0.82 + intro * 0.18),
+      (1 - bounce * 0.55) * (1 - vanish) * (0.72 + intro * 0.28),
+      0.86 + intro * 0.14,
     );
-    group.current.position.y = disappearing ? vanish * 0.5 : 0;
+    group.current.position.y = disappearing ? vanish * 0.5 : -0.55 * (1 - intro);
     if (panel.current) {
       panel.current.color.set(color);
       panel.current.emissive.set(color);
@@ -1109,7 +1128,7 @@ function Gate({
   );
 }
 
-function GatePair({ gate, distanceRef, playerXRef, stateRef }) {
+function GatePair({ gate, distanceRef, playerXRef, stateRef, introProgressRef }) {
   return (
     <group>
       <Gate
@@ -1120,6 +1139,7 @@ function GatePair({ gate, distanceRef, playerXRef, stateRef }) {
         distanceRef={distanceRef}
         playerXRef={playerXRef}
         stateRef={stateRef}
+        introProgressRef={introProgressRef}
       />
       <Gate
         x={LANE_X}
@@ -1129,12 +1149,13 @@ function GatePair({ gate, distanceRef, playerXRef, stateRef }) {
         distanceRef={distanceRef}
         playerXRef={playerXRef}
         stateRef={stateRef}
+        introProgressRef={introProgressRef}
       />
     </group>
   );
 }
 
-function EnemyWave({ wave, enemies, waveState, distanceRef, active }) {
+function EnemyWave({ wave, enemies, waveState, distanceRef, active, introProgressRef }) {
   const bodies = useRef();
   const heads = useRef();
   const shoulders = useRef();
@@ -1155,7 +1176,6 @@ function EnemyWave({ wave, enemies, waveState, distanceRef, active }) {
   }, [enemies.length]);
 
   useFrame((state) => {
-    if (!active) return;
     if (
       !bodies.current ||
       !heads.current ||
@@ -1165,6 +1185,7 @@ function EnemyWave({ wave, enemies, waveState, distanceRef, active }) {
       !legs.current
     ) return;
     const t = state.clock.elapsedTime;
+    const intro = THREE.MathUtils.smoothstep(introProgressRef?.current ?? 1, 0, 1);
     if (alertRing.current) {
       const alertAge = t - waveState.alertedAt;
       alertRing.current.visible = alertAge >= 0 && alertAge < 0.8;
@@ -1179,20 +1200,20 @@ function EnemyWave({ wave, enemies, waveState, distanceRef, active }) {
       const renderZ =
         distanceRef.current - wave.z - enemy.zOffset + waveState.advance;
       let x = enemy.currentX;
-      let y = 0.3;
-      let z = renderZ;
-      let scaleX = 1;
-      let scaleY = 1;
-      let scaleZ = 1;
+      let y = 0.3 - (1 - intro) * 0.42;
+      let z = renderZ - (1 - intro) * 2.8;
+      let scaleX = 0.82 + intro * 0.18;
+      let scaleY = 0.72 + intro * 0.28;
+      let scaleZ = 0.82 + intro * 0.18;
       let rotationX = 0;
       let rotationY = 0;
       let rotationZ = 0;
-      let visible = renderZ > -64 && renderZ < 8;
+      let visible = intro > 0.02 && renderZ > -64 && renderZ < 8;
       let hit = 0;
       let greyAmount = 0;
 
       if (enemy.alive) {
-        const runRate = waveState.alerted ? 10.5 : 5.5;
+        const runRate = active ? (waveState.alerted ? 10.5 : 5.5) : 3.2;
         y += Math.abs(Math.sin(t * runRate + enemy.id)) * (waveState.alerted ? 0.12 : 0.07);
         rotationY = Math.sin(t * 2 + enemy.id) * 0.14;
         const hitAge = t - enemy.hitAt;
@@ -1204,9 +1225,9 @@ function EnemyWave({ wave, enemies, waveState, distanceRef, active }) {
               : hitAge < 0.2
                 ? 1
                 : 1 - THREE.MathUtils.smoothstep(hitAge, 0.2, 0.66);
-        scaleX = 1 + hit * 0.24;
-        scaleY = 1 - hit * 0.28;
-        scaleZ = 1 + hit * 0.24;
+        scaleX *= 1 + hit * 0.24;
+        scaleY *= 1 - hit * 0.28;
+        scaleZ *= 1 + hit * 0.24;
       } else {
         const age = t - enemy.deathAt;
         visible = age >= 0 && age <= 1.8;
@@ -1680,13 +1701,30 @@ function FloatingIsland({ x, baseZ, scale = 1, distanceRef }) {
   );
 }
 
-function Road({ distanceRef }) {
+function Road({ distanceRef, introProgressRef }) {
   const markings = useRef();
-  useFrame(() => {
+  const group = useRef();
+  useFrame((_, delta) => {
     if (markings.current) markings.current.position.z = distanceRef.current % 8;
+    if (group.current) {
+      const intro = THREE.MathUtils.smoothstep(introProgressRef?.current ?? 1, 0, 1);
+      group.current.position.y = THREE.MathUtils.damp(
+        group.current.position.y,
+        -0.36 * (1 - intro),
+        10,
+        delta,
+      );
+      group.current.position.z = THREE.MathUtils.damp(
+        group.current.position.z,
+        1.4 * (1 - intro),
+        10,
+        delta,
+      );
+      group.current.scale.set(0.985 + intro * 0.015, 1, 0.965 + intro * 0.035);
+    }
   });
   return (
-    <group>
+    <group ref={group}>
       <mesh position={[0, -0.055, -42]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[6.85, 96, 4, 18]} />
         <meshStandardMaterial
@@ -1810,9 +1848,11 @@ function FixedSkyBackdrop() {
   );
 }
 
-function World({ status, runSeed, onFrameData, onEvent }) {
+function World({ status, runSeed, onFrameData, onEvent, onReady }) {
   const { camera, gl } = useThree();
   const gates = useMemo(() => createGates(runSeed), [runSeed]);
+  const previousStatus = useRef(status);
+  const introProgress = useRef(1);
   const playerX = useRef(0);
   const pointerTargetX = useRef(0);
   const distance = useRef(DEBUG_BOSS_TEST ? TRACK_END : DEBUG_START_AT);
@@ -1921,6 +1961,21 @@ function World({ status, runSeed, onFrameData, onEvent }) {
   const lastPlayerDeath = useRef(null);
   const movementSamples = useRef([]);
   const fpsCounter = useRef({ frames: 0, elapsed: 0, value: 0 });
+
+  useEffect(() => {
+    let frame = 0;
+    let animationFrame = 0;
+    const notifyAfterPaint = () => {
+      frame += 1;
+      if (frame >= 2) {
+        onReady?.();
+        return;
+      }
+      animationFrame = requestAnimationFrame(notifyAfterPaint);
+    };
+    animationFrame = requestAnimationFrame(notifyAfterPaint);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [onReady]);
 
   const getCombatStage = () => {
     const regionIndex = WAVES.findIndex(
@@ -2112,6 +2167,14 @@ function World({ status, runSeed, onFrameData, onEvent }) {
 
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 1 / 30);
+    if (previousStatus.current !== status) {
+      if (status === "intro") introProgress.current = 0;
+      previousStatus.current = status;
+    }
+    introProgress.current =
+      status === "intro"
+        ? THREE.MathUtils.damp(introProgress.current, 1, 4.8, delta)
+        : 1;
     fpsCounter.current.frames += 1;
     fpsCounter.current.elapsed += rawDelta;
     if (fpsCounter.current.elapsed >= 1) {
@@ -2817,7 +2880,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
         shadow-camera-bottom={-4}
       />
 
-      <Road distanceRef={distance} />
+      <Road distanceRef={distance} introProgressRef={introProgress} />
 
       {gates.map((gate, index) => (
         <GatePair
@@ -2826,6 +2889,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
           distanceRef={distance}
           playerXRef={playerX}
           stateRef={gateStates.current[index]}
+          introProgressRef={introProgress}
         />
       ))}
       {!DEBUG_NO_ENEMIES && WAVES.map((wave, index) => (
@@ -2836,6 +2900,7 @@ function World({ status, runSeed, onFrameData, onEvent }) {
           waveState={waveStates.current[index]}
           distanceRef={distance}
           active={status === "playing"}
+          introProgressRef={introProgress}
         />
       ))}
       <Boss
@@ -2855,7 +2920,8 @@ function World({ status, runSeed, onFrameData, onEvent }) {
           unitsRef={armyUnits}
           upgradePulseRef={upgradePulse}
           cannonPulseRef={cannonPulse}
-          active={status === "playing"}
+          introProgressRef={introProgress}
+          active={status === "playing" || status === "intro"}
         />
       )}
       {!DEBUG_NO_PROJECTILES && <ProjectilePool bulletsRef={bullets} />}
@@ -2987,8 +3053,26 @@ function EndScreen({ won, data, isRecord, onRestart }) {
   );
 }
 
+function LoadingOverlay() {
+  return (
+    <div className="screen loading-screen">
+      <div className="loading-orb" aria-hidden="true">
+        <span />
+        <span />
+      </div>
+      <p className="kicker">SKYLINE LEGION</p>
+      <h2>正在唤醒天穹航道</h2>
+      <p className="loading-copy">预热 3D 场景、能量门与空中军团…</p>
+      <div className="loading-bar" aria-hidden="true">
+        <i />
+      </div>
+    </div>
+  );
+}
+
 export function App() {
-  const [status, setStatus] = useState("menu");
+  const [status, setStatus] = useState("booting");
+  const [worldReady, setWorldReady] = useState(false);
   const [sound, setSound] = useState(!DEBUG_FLAGS.has("noAudio"));
   const [flash, setFlash] = useState(null);
   const [runId, setRunId] = useState(0);
@@ -3012,6 +3096,8 @@ export function App() {
     score: 0,
   });
   const flashTimer = useRef();
+  const introTimer = useRef();
+  const bootStartedAt = useRef(performance.now());
   const audioContext = useRef();
   const bestRef = useRef(best);
   const sfxTimes = useRef({ shoot: 0, impact: 0 });
@@ -3153,7 +3239,20 @@ export function App() {
     [playTone, showFlash],
   );
 
+  const handleWorldReady = useCallback(() => {
+    setWorldReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!worldReady || status !== "booting") return;
+    const elapsed = performance.now() - bootStartedAt.current;
+    const delay = Math.max(0, BOOT_MIN_DURATION - elapsed);
+    const timer = setTimeout(() => setStatus("menu"), delay);
+    return () => clearTimeout(timer);
+  }, [status, worldReady]);
+
   const start = () => {
+    const shouldResetWorld = status !== "menu";
     playTone(520, 0.1, "triangle", 0.035);
     setData({
       troops: 12,
@@ -3167,8 +3266,10 @@ export function App() {
     });
     setIsRecord(false);
     setFlash(null);
-    setRunId((value) => value + 1);
-    setStatus("playing");
+    clearTimeout(introTimer.current);
+    if (shouldResetWorld) setRunId((value) => value + 1);
+    setStatus("intro");
+    introTimer.current = setTimeout(() => setStatus("playing"), INTRO_DURATION);
   };
 
   const togglePause = () => {
@@ -3191,12 +3292,17 @@ export function App() {
     setData((current) => ({ ...current, ...next }));
   }, []);
 
-  useEffect(() => () => clearTimeout(flashTimer.current), []);
+  useEffect(
+    () => () => {
+      clearTimeout(flashTimer.current);
+      clearTimeout(introTimer.current);
+    },
+    [],
+  );
 
   return (
-    <main className={`game-shell ${flash ? `feedback-${flash.tone}` : ""}`}>
+    <main className={`game-shell phase-${status} ${flash ? `feedback-${flash.tone}` : ""}`}>
       <Canvas
-        key={runId}
         shadows="percentage"
         dpr={[1, 1.45]}
         camera={{ position: [0, 6.9, 13.2], fov: 43, near: 0.1, far: 190 }}
@@ -3211,15 +3317,17 @@ export function App() {
       >
         <Suspense fallback={null}>
           <World
+            key={runId}
             status={status}
             runSeed={runId}
             onFrameData={handleFrameData}
             onEvent={handleEvent}
+            onReady={handleWorldReady}
           />
         </Suspense>
       </Canvas>
 
-      {status !== "menu" && status !== "won" && status !== "lost" && (
+      {status !== "booting" && status !== "menu" && status !== "won" && status !== "lost" && (
         <HUD
           data={data}
           status={status}
@@ -3229,6 +3337,7 @@ export function App() {
           onFullscreen={toggleFullscreen}
         />
       )}
+      {status === "booting" && <LoadingOverlay />}
       {status === "menu" && <Intro best={best} onStart={start} />}
       {status === "paused" && (
         <div className="screen pause-screen">

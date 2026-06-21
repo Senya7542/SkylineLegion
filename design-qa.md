@@ -122,7 +122,7 @@ The revised implementation preserves the selected concept's portrait composition
 ## v4.2 combat feedback, crowd physics and environment verification
 
 - Source visual truth: `C:/Users/Yoru17/AppData/Local/Temp/codex-clipboard-056adeb5-4625-4ab4-af6a-336bbb1b72d4.png`.
-- Generated environment asset: `public/assets/azure-sky-panorama-v1.jpg`.
+- Generated environment asset: `docs/reference/azure-sky-panorama-v1.jpg`.
 - Implementation screenshots:
   - `.playwright-cli/page-2026-06-19T18-25-58-856Z.png` — elevated aircraft, cannon corridor, crowd spacing, shadows and sky.
   - `.playwright-cli/page-2026-06-19T18-20-48-083Z.png` — isolated Boss encounter with health bar and active fire.
@@ -211,8 +211,8 @@ final result: passed
 ## v5.1 gate-hit accounting, v5 camera backdrop and procedural mech kit verification
 
 - Source feedback: user reported gate values barely grew despite many bullets, suspected the gate should count received bullet hits rather than per-shooter cadence; also reported final-region bullets passing through enemies/Boss. User then requested autonomous overnight polish for the new generated background and procedural low-poly character/Boss style.
-- Generated background asset: `public/assets/skyline-backdrop-v3.png`.
-- Generated character reference: `public/assets/references/lowpoly-unit-style-v1.png`.
+- Generated background asset: `src/assets/skyline-backdrop-v3.png`.
+- Generated character reference: `docs/reference/lowpoly-unit-style-v1.png`.
 - Active gameplay screenshot evidence: `.playwright-cli/page-2026-06-20T19-19-11-751Z.png`.
 - Boss visual screenshot evidence: `.playwright-cli/page-2026-06-20T19-37-51-855Z.png`.
 
@@ -270,7 +270,7 @@ final result: passed
 ## v4.9 generated vanishing-point backdrop and procedural low-poly kit verification
 
 - Source feedback: user approved a three-step direction: procedural glass road/environment first, then procedural low-poly soldiers, then procedural low-poly Boss; avoid relying on external models for now.
-- Generated project asset: `public/assets/skyline-backdrop-v2.png`.
+- Generated project asset: `docs/reference/skyline-backdrop-v2.png`.
 - Active gameplay screenshot evidence: `.playwright-cli/page-2026-06-20T14-41-26-969Z.png`.
 - Viewport/state: portrait gameplay capture in a non-headed Playwright CLI session against `http://127.0.0.1:4180/`.
 
