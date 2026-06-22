@@ -257,9 +257,11 @@ export function chooseEnemyTarget(waves, waveStates, shooterX, distance, regionI
 
 export function createEnemy(wave, waveIndex, index) {
   const angle = index * 2.3999632297;
-  const radius = 0.18 + Math.sqrt(index) * 0.145;
-  const x = clamp(Math.cos(angle) * radius, -2.05, 2.05);
-  const zOffset = clamp(Math.sin(angle) * radius + Math.sqrt(index) * 0.035, -1.0, 3.8);
+  const count = Math.max(1, wave.count ?? index + 1);
+  const radius = (0.18 + Math.sqrt((index + 0.5) / count) * 2.72) *
+    (0.92 + (waveIndex % 2) * 0.04);
+  const x = Math.cos(angle) * radius;
+  const zOffset = Math.sin(angle) * radius;
   return {
     id: waveIndex * 100 + index,
     waveZ: wave.z,

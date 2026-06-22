@@ -2,10 +2,10 @@ const clampLocal = (value, min, max) => Math.max(min, Math.min(max, value));
 
 const SHOOTER_LANE_WIDTH = 0.25;
 const SHOOTER_LANE_OFFSET = 4;
+const PLAYER_BULLET_LIFE = 3.05;
+const PLAYER_HEAVY_BULLET_LIFE = 3.6;
+const BOSS_PROJECTILE_SPEED = 11.4;
 const ENEMY_CLUSTER_RADIUS = 0.38;
-const ENEMY_CLUSTER_LIMIT_X = 2.28;
-const ENEMY_CLUSTER_MIN_Z_OFFSET = -1.35;
-const ENEMY_CLUSTER_MAX_Z_OFFSET = 4.4;
 
 const dampLocal = (current, target, smoothing, delta) =>
   current + (target - current) * (1 - Math.exp(-smoothing * delta));
@@ -13,6 +13,14 @@ const dampLocal = (current, target, smoothing, delta) =>
 export function getInitialShotOffset(index) {
   const value = Math.sin((index + 1) * 12.9898) * 43758.5453;
   return (value - Math.floor(value)) * 0.2;
+}
+
+export function getPlayerBulletLife({ heavy = false } = {}) {
+  return heavy ? PLAYER_HEAVY_BULLET_LIFE : PLAYER_BULLET_LIFE;
+}
+
+export function getBossProjectileSpeed() {
+  return BOSS_PROJECTILE_SPEED;
 }
 
 export function isShooterUnblocked(shooter, shooters) {
@@ -59,6 +67,48 @@ export function applyGateBulletHit(gateState, side, bullet) {
   return { increase, value: gateState[valueKey] };
 }
 
+export function getGateRouteSummary(gateStates = []) {
+  const choices = gateStates
+    .map((gateState, index) => {
+      if (!gateState?.resolved || !gateState.choice) return null;
+      const leftValue = gateState.leftValue ?? 0;
+      const rightValue = gateState.rightValue ?? 0;
+      const choice = gateState.choice;
+      const pickedValue = choice === "left" ? leftValue : rightValue;
+      const otherValue = choice === "left" ? rightValue : leftValue;
+      const bestSide = leftValue >= rightValue ? "left" : "right";
+      const bestValue = Math.max(leftValue, rightValue);
+      return {
+        gateIndex: index,
+        choice,
+        pickedValue,
+        otherValue,
+        bestSide,
+        bestValue,
+        isBetterChoice: choice === bestSide,
+        deltaFromBest: pickedValue - bestValue,
+      };
+    })
+    .filter(Boolean);
+  const betterChoices = choices.filter((choice) => choice.isBetterChoice).length;
+  const worseChoices = choices.length - betterChoices;
+  const quality =
+    choices.length === 0
+      ? "none"
+      : worseChoices === 0
+        ? "perfect"
+        : betterChoices === 0
+          ? "bad"
+          : "mixed";
+  return {
+    choices,
+    totalResolved: choices.length,
+    betterChoices,
+    worseChoices,
+    quality,
+  };
+}
+
 export function stepEnemyCluster({
   enemies,
   waveState,
@@ -69,12 +119,23 @@ export function stepEnemyCluster({
   const centerTarget = alerted ? clampLocal(targetCenterX, -0.72, 0.72) : 0;
   waveState.centerX = dampLocal(waveState.centerX ?? 0, centerTarget, alerted ? 2.8 : 4.4, delta);
   const alive = enemies.filter((enemy) => enemy.alive);
+  const aliveHomeCenterX = alive.length
+    ? alive.reduce((sum, enemy) => sum + (enemy.homeX ?? enemy.x ?? enemy.currentX ?? 0), 0) / alive.length
+    : 0;
+  const aliveHomeCenterZ = alive.length
+    ? alive.reduce((sum, enemy) => sum + (enemy.homeZOffset ?? enemy.zOffset ?? 0), 0) / alive.length
+    : 0;
+  const formationScale = clampLocal(
+    Math.sqrt(alive.length / Math.max(1, enemies.length)),
+    0.42,
+    1,
+  );
 
   alive.forEach((enemy) => {
     const homeX = enemy.homeX ?? enemy.x ?? enemy.currentX ?? 0;
     const homeZOffset = enemy.homeZOffset ?? enemy.zOffset ?? 0;
-    const targetX = (waveState.centerX ?? 0) + homeX;
-    const targetZOffset = homeZOffset;
+    const targetX = (waveState.centerX ?? 0) + (homeX - aliveHomeCenterX) * formationScale;
+    const targetZOffset = (homeZOffset - aliveHomeCenterZ) * formationScale;
     enemy.localVx = (enemy.localVx ?? 0) + (targetX - (enemy.currentX ?? homeX)) * 10.5 * delta;
     enemy.localVz = (enemy.localVz ?? 0) + (targetZOffset - enemy.zOffset) * 9.2 * delta;
     enemy.localVx *= Math.exp(-5.7 * delta);
@@ -83,7 +144,8 @@ export function stepEnemyCluster({
     enemy.zOffset += enemy.localVz * delta;
   });
 
-  for (let iteration = 0; iteration < 5; iteration += 1) {
+  const separationIterations = alive.length > 360 ? 2 : alive.length > 220 ? 3 : 5;
+  for (let iteration = 0; iteration < separationIterations; iteration += 1) {
     for (let index = 0; index < alive.length; index += 1) {
       const enemy = alive[index];
       for (let otherIndex = 0; otherIndex < index; otherIndex += 1) {
@@ -110,14 +172,6 @@ export function stepEnemyCluster({
     }
   }
 
-  alive.forEach((enemy) => {
-    enemy.currentX = clampLocal(enemy.currentX, -ENEMY_CLUSTER_LIMIT_X, ENEMY_CLUSTER_LIMIT_X);
-    enemy.zOffset = clampLocal(
-      enemy.zOffset,
-      ENEMY_CLUSTER_MIN_Z_OFFSET,
-      ENEMY_CLUSTER_MAX_Z_OFFSET,
-    );
-  });
 }
 
 export function getCombatStageSnapshot({
@@ -212,10 +266,14 @@ export function findBulletCollisionTarget({
 }) {
   let target = null;
   let targetZ = -Infinity;
+  const nextGateIndex = gateStates.findIndex((gateState) => !gateState?.resolved);
 
   gates.forEach((gate, gateIndex) => {
+    if (gateIndex !== nextGateIndex) return;
     const gateState = gateStates[gateIndex];
     if (!gateState || gateState.resolved) return;
+    const gateDistance = gate.z - distance;
+    if (gateDistance > 27 + gateIndex * 9) return;
     const z = distance - gate.z;
     const side = collisionX < 0 ? "left" : "right";
     const laneCenter = side === "left" ? -laneX : laneX;

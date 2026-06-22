@@ -4,10 +4,15 @@ import {
   applyGateBulletHit,
   findBulletCollisionTarget,
   findEnemySplashTargets,
+  getBossProjectileSpeed,
   getCombatStageSnapshot,
+  getGateRouteSummary,
+  getPlayerBulletLife,
   getVolleyShooterPlan,
   stepEnemyCluster,
 } from "../src/combatLogic.js";
+import { createGates, WAVES } from "../src/gameConfig.js";
+import { createEnemy } from "../src/gameSystems.js";
 
 const makeGateState = (overrides = {}) => ({
   leftValue: 10,
@@ -66,6 +71,70 @@ test("unresolved gate blocks bullets by physical intersection regardless of stal
   assert.equal(target?.type, "gate");
   assert.equal(target?.gateIndex, 0);
   assert.equal(target?.side, "right");
+});
+
+test("long-lived bullets do not charge a future gate before it is the current gate", () => {
+  const target = findBulletCollisionTarget({
+    bullet: { heavy: false, phase: "wave", regionIndex: 0 },
+    oldZ: -44,
+    nextZ: -50,
+    collisionX: 1.62,
+    distance: 20,
+    laneX: 1.62,
+    gates: [{ z: 67, shotsPerPoint: 2, maxValue: 999 }],
+    gateStates: [makeGateState()],
+    waves: [],
+    waveStates: [],
+    waveEnemies: [],
+    boss: { active: false },
+  });
+
+  assert.equal(target, null);
+});
+
+test("current gate blocks bullets as soon as its region begins", () => {
+  const target = findBulletCollisionTarget({
+    bullet: { heavy: false, phase: "gate", regionIndex: 0 },
+    oldZ: -24,
+    nextZ: -28,
+    collisionX: 1.62,
+    distance: 41,
+    laneX: 1.62,
+    gates: [{ z: 67, shotsPerPoint: 2, maxValue: 999 }],
+    gateStates: [makeGateState()],
+    waves: [],
+    waveStates: [],
+    waveEnemies: [],
+    boss: { active: false },
+  });
+
+  assert.equal(target?.type, "gate");
+  assert.equal(target?.gateIndex, 0);
+  assert.equal(target?.side, "right");
+});
+
+test("next area gate blocks bullets as soon as that area begins", () => {
+  const target = findBulletCollisionTarget({
+    bullet: { heavy: false, phase: "gate", regionIndex: 1 },
+    oldZ: -33,
+    nextZ: -37,
+    collisionX: -1.62,
+    distance: 32,
+    laneX: 1.62,
+    gates: [
+      { z: 28, shotsPerPoint: 2, maxValue: 999 },
+      { z: 67, shotsPerPoint: 2, maxValue: 999 },
+    ],
+    gateStates: [{ ...makeGateState(), resolved: true }, makeGateState()],
+    waves: [],
+    waveStates: [],
+    waveEnemies: [],
+    boss: { active: false },
+  });
+
+  assert.equal(target?.type, "gate");
+  assert.equal(target?.gateIndex, 1);
+  assert.equal(target?.side, "left");
 });
 
 test("volley shooter plan selects only unblocked outer/front shooters", () => {
@@ -133,6 +202,156 @@ test("normal gate bullet increases the hit side by exactly one", () => {
   assert.equal(gateState.rightValue, 16);
   assert.equal(gateState.rightCharge, 0);
   assert.equal(result.increase, 1);
+});
+
+test("gate route summary counts better and worse gate choices", () => {
+  const summary = getGateRouteSummary([
+    { resolved: true, choice: "right", leftValue: -8, rightValue: 14 },
+    { resolved: true, choice: "left", leftValue: -7, rightValue: 15 },
+    { resolved: true, choice: "right", leftValue: -42, rightValue: -20 },
+    { resolved: false, choice: null, leftValue: -58, rightValue: -18 },
+  ]);
+
+  assert.equal(summary.totalResolved, 3);
+  assert.equal(summary.betterChoices, 2);
+  assert.equal(summary.worseChoices, 1);
+  assert.equal(summary.quality, "mixed");
+  assert.deepEqual(
+    summary.choices.map((choice) => ({
+      gateIndex: choice.gateIndex,
+      choice: choice.choice,
+      pickedValue: choice.pickedValue,
+      bestSide: choice.bestSide,
+      deltaFromBest: choice.deltaFromBest,
+    })),
+    [
+      { gateIndex: 0, choice: "right", pickedValue: 14, bestSide: "right", deltaFromBest: 0 },
+      { gateIndex: 1, choice: "left", pickedValue: -7, bestSide: "right", deltaFromBest: -22 },
+      { gateIndex: 2, choice: "right", pickedValue: -20, bestSide: "right", deltaFromBest: 0 },
+    ],
+  );
+});
+
+test("player bullets live long enough to leave the screen instead of popping early", () => {
+  assert.equal(getPlayerBulletLife({ phase: "gate", rapid: false, heavy: false }) >= 2.8, true);
+  assert.equal(getPlayerBulletLife({ phase: "travel", rapid: true, heavy: false }) >= 2.8, true);
+  assert.equal(getPlayerBulletLife({ phase: "boss", rapid: false, heavy: true }) >= 3.4, true);
+});
+
+test("final gate keeps choice spread after lifting both sides by thirty", () => {
+  const gates = createGates(17);
+  const thirdValues = [gates[2].left, gates[2].right].sort((a, b) => a - b);
+  const fourthValues = [gates[3].left, gates[3].right].sort((a, b) => a - b);
+
+  assert.equal(thirdValues[0] >= -64 && thirdValues[0] <= -54, true);
+  assert.equal(thirdValues[1] >= -16 && thirdValues[1] <= -6, true);
+  assert.equal(fourthValues[0] >= -58 && fourthValues[0] <= -40, true);
+  assert.equal(fourthValues[1] >= -30 && fourthValues[1] <= -18, true);
+});
+
+test("enemy wave pressure increases toward the boss and boss shells travel faster", () => {
+  assert.deepEqual(
+    WAVES.map((wave) => wave.count),
+    [180, 200, 220, 240],
+  );
+  assert.equal(getBossProjectileSpeed() >= 11, true);
+});
+
+test("enemy waves use a round cluster instead of square clamps", () => {
+  const wave = { z: 166, count: 240 };
+  const enemies = Array.from({ length: wave.count }, (_, index) =>
+    createEnemy(wave, 3, index),
+  );
+  const maxRadius = Math.max(
+    ...enemies.map((enemy) => Math.hypot(enemy.homeX, enemy.homeZOffset)),
+  );
+  const maxX = Math.max(...enemies.map((enemy) => enemy.homeX));
+  const minZ = Math.min(...enemies.map((enemy) => enemy.homeZOffset));
+
+  assert.equal(maxRadius <= 3.1, true);
+  assert.equal(maxX > 2.05, true);
+  assert.equal(minZ < -1.65, true);
+});
+
+test("enemy cluster physics does not clamp large round formations into a square", () => {
+  const enemy = {
+    id: 1,
+    alive: true,
+    currentX: 2.9,
+    zOffset: -1.9,
+    homeX: 2.9,
+    homeZOffset: -1.9,
+  };
+
+  stepEnemyCluster({
+    enemies: [enemy],
+    waveState: { centerX: 0 },
+    delta: 1 / 60,
+    targetCenterX: 0,
+    alerted: true,
+  });
+
+  assert.equal(enemy.currentX > 2.28, true);
+  assert.equal(enemy.zOffset < -1.35, true);
+});
+
+test("enemy cluster closes center gaps after middle enemies die", () => {
+  const enemies = [
+    {
+      id: 1,
+      alive: true,
+      currentX: -1.6,
+      zOffset: 0,
+      homeX: -1.6,
+      homeZOffset: 0,
+    },
+    {
+      id: 2,
+      alive: false,
+      currentX: -0.42,
+      zOffset: 0,
+      homeX: -0.42,
+      homeZOffset: 0,
+    },
+    {
+      id: 3,
+      alive: false,
+      currentX: 0,
+      zOffset: 0,
+      homeX: 0,
+      homeZOffset: 0,
+    },
+    {
+      id: 4,
+      alive: false,
+      currentX: 0.42,
+      zOffset: 0,
+      homeX: 0.42,
+      homeZOffset: 0,
+    },
+    {
+      id: 5,
+      alive: true,
+      currentX: 1.6,
+      zOffset: 0,
+      homeX: 1.6,
+      homeZOffset: 0,
+    },
+  ];
+  const waveState = { centerX: 0 };
+
+  for (let frame = 0; frame < 80; frame += 1) {
+    stepEnemyCluster({
+      enemies,
+      waveState,
+      delta: 1 / 60,
+      targetCenterX: 0,
+      alerted: true,
+    });
+  }
+
+  assert.equal(enemies[0].currentX > -1.2, true);
+  assert.equal(enemies[4].currentX < 1.2, true);
 });
 
 test("heavy player shells collect all enemies inside an impact radius", () => {

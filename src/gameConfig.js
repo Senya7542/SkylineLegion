@@ -12,15 +12,15 @@ export const GATE_VALUE_CAP = 999;
 const GATE_TEMPLATES = [
   { z: 28, penalty: [-8, -4], reward: [8, 12], shotsPerPoint: 2 },
   { z: 67, penalty: [-9, -5], reward: [12, 18], shotsPerPoint: 2 },
-  { z: 108, penalty: [-24, -14], reward: [24, 34], shotsPerPoint: 3 },
-  { z: 145, penalty: [-48, -30], reward: [-20, -8], shotsPerPoint: 4 },
+  { z: 108, penalty: [-64, -54], reward: [-16, -6], shotsPerPoint: 3 },
+  { z: 145, penalty: [-58, -40], reward: [-30, -18], shotsPerPoint: 4 },
 ];
 
 export const WAVES = [
-  { z: 54, count: 40, speed: 2.05, gateIndex: 0 },
-  { z: 94, count: 60, speed: 2.32, gateIndex: 1 },
-  { z: 135, count: 86, speed: 2.62, gateIndex: 2 },
-  { z: 166, count: 96, speed: 2.88, gateIndex: 3 },
+  { z: 54, count: 180, speed: 2.05, gateIndex: 0 },
+  { z: 94, count: 200, speed: 2.32, gateIndex: 1 },
+  { z: 135, count: 220, speed: 2.62, gateIndex: 2 },
+  { z: 166, count: 240, speed: 2.88, gateIndex: 3 },
 ];
 
 const seeded = (seed) => {

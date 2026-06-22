@@ -49,8 +49,11 @@ import {
   applyGateBulletHit,
   findBulletCollisionTarget,
   findEnemySplashTargets,
+  getBossProjectileSpeed,
   getCombatStageSnapshot,
+  getGateRouteSummary,
   getInitialShotOffset,
+  getPlayerBulletLife,
   getVolleyShooterPlan,
   stepEnemyCluster,
 } from "./combatLogic.js";
@@ -939,42 +942,70 @@ function BossProjectilePool({ projectilesRef }) {
 
 function BossTargetTelegraphs({ projectilesRef }) {
   const rings = useRef();
+  const outerRings = useRef();
   const fills = useRef();
   const dummy = useMemo(() => new THREE.Object3D(), []);
   useEffect(() => {
-    [rings, fills].forEach((ref) => {
+    [rings, outerRings, fills].forEach((ref) => {
       if (ref.current) ref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     });
   }, []);
   useFrame((state) => {
-    if (!rings.current || !fills.current) return;
+    if (!rings.current || !outerRings.current || !fills.current) return;
     projectilesRef.current.forEach((projectile, index) => {
       if (!projectile.active) {
         dummy.scale.setScalar(0);
-      } else {
-        const warningAge = state.clock.elapsedTime - projectile.spawnedAt;
-        const pulse = 1 + Math.sin(warningAge * 14) * 0.09;
-        dummy.position.set(projectile.targetX, 0.13, projectile.targetZ);
-        dummy.rotation.set(Math.PI / 2, 0, 0);
-        dummy.scale.setScalar(projectile.radius * pulse);
+        dummy.updateMatrix();
+        rings.current.setMatrixAt(index, dummy.matrix);
+        outerRings.current.setMatrixAt(index, dummy.matrix);
+        fills.current.setMatrixAt(index, dummy.matrix);
+        return;
       }
+      const warningAge = state.clock.elapsedTime - projectile.spawnedAt;
+      const travelTotal = Math.max(0.001, projectile.targetZ - (projectile.startZ ?? projectile.z));
+      const travelProgress = clamp(
+        (projectile.z - (projectile.startZ ?? projectile.z)) / travelTotal,
+        0,
+        1,
+      );
+      const pulse = 1 + Math.sin(warningAge * 18) * 0.08;
+      dummy.position.set(projectile.targetX, 0.135, projectile.targetZ);
+      dummy.rotation.set(Math.PI / 2, 0, 0);
+      dummy.scale.setScalar(projectile.radius * pulse);
       dummy.updateMatrix();
       rings.current.setMatrixAt(index, dummy.matrix);
-      if (projectile.active) dummy.scale.multiplyScalar(0.82);
+
+      dummy.scale.setScalar(projectile.radius * (1.56 - travelProgress * 0.42));
+      dummy.updateMatrix();
+      outerRings.current.setMatrixAt(index, dummy.matrix);
+
+      dummy.scale.setScalar(projectile.radius * (0.68 + travelProgress * 0.28));
       dummy.updateMatrix();
       fills.current.setMatrixAt(index, dummy.matrix);
     });
     rings.current.instanceMatrix.needsUpdate = true;
+    outerRings.current.instanceMatrix.needsUpdate = true;
     fills.current.instanceMatrix.needsUpdate = true;
   });
   return (
     <group>
+      <instancedMesh ref={outerRings} args={[null, null, MAX_BOSS_PROJECTILES]}>
+        <torusGeometry args={[1, 0.035, 7, 56]} />
+        <meshBasicMaterial
+          color="#ffe36a"
+          transparent
+          opacity={0.7}
+          toneMapped={false}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </instancedMesh>
       <instancedMesh ref={rings} args={[null, null, MAX_BOSS_PROJECTILES]}>
-        <torusGeometry args={[1, 0.055, 8, 48]} />
+        <torusGeometry args={[1, 0.072, 8, 56]} />
         <meshBasicMaterial
           color="#ff3d1f"
           transparent
-          opacity={0.92}
+          opacity={0.96}
           toneMapped={false}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
@@ -1032,7 +1063,8 @@ function ImpactPool({ impactsRef }) {
   const particles = useRef();
   const rings = useRef();
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const particlesPerImpact = 8;
+  const color = useMemo(() => new THREE.Color(), []);
+  const particlesPerImpact = 12;
   useEffect(() => {
     [particles, rings].forEach((ref) => {
       if (ref.current) ref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -1055,16 +1087,17 @@ function ImpactPool({ impactsRef }) {
         }
         const progress = 1 - impact.life / impact.duration;
         const angle = (particle / particlesPerImpact) * Math.PI * 2;
-        const radius = 0.05 + progress * (0.18 + particle * 0.025);
+        const radius = 0.05 + progress * (0.2 + particle * 0.026);
         dummy.position.set(
           impact.x + Math.cos(angle) * radius,
           impact.y + Math.sin(angle) * radius,
           impact.z + (particle - 2) * 0.025,
         );
         dummy.rotation.set(progress * 3, angle, 0);
-        dummy.scale.setScalar((impact.size || 1) * (1.1 - progress * 0.65));
+        dummy.scale.setScalar((impact.size || 1) * (1.22 - progress * 0.74));
         dummy.updateMatrix();
         particles.current.setMatrixAt(matrixIndex, dummy.matrix);
+        particles.current.setColorAt(matrixIndex, color.set(impact.color || "#fff16a"));
       }
       if (!impact.active) {
         dummy.scale.setScalar(0);
@@ -1072,13 +1105,16 @@ function ImpactPool({ impactsRef }) {
         const progress = 1 - impact.life / impact.duration;
         dummy.position.set(impact.x, impact.y, impact.z - 0.035);
         dummy.rotation.set(0, 0, 0);
-        dummy.scale.setScalar((impact.size || 1) * (0.35 + progress * 2.4));
+        dummy.scale.setScalar((impact.size || 1) * (0.38 + progress * 2.85));
       }
       dummy.updateMatrix();
       rings.current.setMatrixAt(impactIndex, dummy.matrix);
+      rings.current.setColorAt(impactIndex, color.set(impact.color || "#fff27a"));
     });
     particles.current.instanceMatrix.needsUpdate = true;
+    if (particles.current.instanceColor) particles.current.instanceColor.needsUpdate = true;
     rings.current.instanceMatrix.needsUpdate = true;
+    if (rings.current.instanceColor) rings.current.instanceColor.needsUpdate = true;
   });
   return (
     <group>
@@ -2089,6 +2125,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       x: 0,
       y: 0.8,
       z: -20,
+      startZ: -20,
       vx: 0,
       vz: 0,
       life: 0,
@@ -2196,12 +2233,11 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       bullet.shooter = shooter.index;
       bullet.regionIndex = stage.regionIndex;
       bullet.phase = stage.phase;
-      bullet.life =
-        stage.phase === "gate"
-          ? rapid ? 0.62 : 0.76
-          : stage.phase === "travel"
-            ? 0.72
-            : rapid ? 1.12 : 1.34;
+      bullet.life = getPlayerBulletLife({
+        phase: stage.phase,
+        rapid,
+        heavy: false,
+      });
       shooter.nextShotAt =
         time +
         (rapid ? 0.22 : 0.34) +
@@ -2246,12 +2282,11 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     bullet.shooter = -1;
     bullet.regionIndex = stage.regionIndex;
     bullet.phase = stage.phase;
-    bullet.life =
-      stage.phase === "gate"
-        ? 1.05
-        : stage.phase === "travel"
-          ? 0.95
-          : 1.75;
+    bullet.life = getPlayerBulletLife({
+      phase: stage.phase,
+      rapid: false,
+      heavy: true,
+    });
     cannonPulse.current = time;
     spawnImpact(playerX.current, 0.83, 3.08, "#fff16a", 0.2, 1.25);
     onEvent({ type: "shoot", heavy: true });
@@ -2279,14 +2314,16 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
     const muzzleX = 0;
     const target = getBossProjectileTarget();
     const targetX = target.x;
-    const travelTime = Math.max(0.8, (3.1 - bossZ) / 8.2);
+    const projectileSpeed = getBossProjectileSpeed();
+    const travelTime = Math.max(0.62, (3.1 - bossZ) / projectileSpeed);
     projectile.active = true;
     projectile.x = muzzleX;
     projectile.y = 1.05;
     projectile.z = bossZ + 0.1;
+    projectile.startZ = bossZ + 0.1;
     projectile.vx = (targetX - muzzleX) / travelTime;
-    projectile.vz = 8.2;
-    projectile.life = 2.6;
+    projectile.vz = projectileSpeed;
+    projectile.life = Math.max(2.2, travelTime + 0.65);
     projectile.targetX = targetX;
     projectile.targetZ = target.z;
     const radius = 0.58 + (BOSS_MAX_HEALTH - bossHealth.current) * 0.0018;
@@ -2305,6 +2342,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
 
   const recordBalanceEvent = (type, time, payload = {}) => {
     if (!import.meta.env.DEV) return;
+    const routeSummary = getGateRouteSummary(gateStates.current);
     balanceLog.current.push({
       type,
       time: Number(time.toFixed(2)),
@@ -2313,12 +2351,16 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
       combo: combo.current,
       bossHealth: Number(getBossHealthPercent().toFixed(1)),
       bossHp: Number(bossHealth.current.toFixed(1)),
+      gateRouteQuality: routeSummary.quality,
+      betterGateChoices: routeSummary.betterChoices,
+      worseGateChoices: routeSummary.worseChoices,
       ...payload,
     });
     if (balanceLog.current.length > 120) balanceLog.current.shift();
   };
 
   const recordLoss = (time, reason) => {
+    const routeSummary = getGateRouteSummary(gateStates.current);
     recordBalanceEvent("lost", time, {
       reason,
       bossDuration:
@@ -2326,6 +2368,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           ? 0
           : Number((time - bossStartedAt.current).toFixed(2)),
       bossStartTroops: bossStartTroops.current,
+      routeSummary,
     });
   };
 
@@ -2648,9 +2691,9 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
               collisionX,
               bullet.y,
               target.z - 0.08,
-              "#fff16a",
-              0.38,
-              PLAYER_HEAVY_SPLASH_RADIUS * 2.65,
+              killed > 0 ? "#9efff0" : "#fff16a",
+              killed > 0 ? 0.46 : 0.38,
+              PLAYER_HEAVY_SPLASH_RADIUS * (killed > 0 ? 3.15 : 2.65),
             );
             recordBalanceEvent("player-heavy-splash", time, {
               victims: victims.length,
@@ -2668,21 +2711,22 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
 
           enemy.hp -= bullet.power ?? 1;
           enemy.hitAt = time;
+          const killed = enemy.hp <= 0;
           spawnImpact(
             collisionX,
             bullet.y,
             target.z - 0.08,
-            "#fff16a",
-            0.26,
-            bullet.power >= 1 ? 1.2 : 0.62,
+            killed ? "#9efff0" : "#fff16a",
+            killed ? 0.34 : 0.24,
+            killed ? 1.72 : bullet.power >= 1 ? 1.2 : 0.62,
           );
           onEvent({
             type: "impact",
             target: "enemy",
             heavy: false,
-            killed: enemy.hp <= 0,
+            killed,
           });
-          if (enemy.hp <= 0) {
+          if (killed) {
             killEnemyFromProjectile(
               enemy,
               target.waveIndex,
@@ -2847,9 +2891,9 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
               (worldVictimX + enemy.currentX) * 0.5,
               0.68,
               renderZ,
-              "#fff16a",
-              0.28,
-              1.5,
+              "#ffef7a",
+              0.34,
+              1.85,
             );
           });
 
@@ -3007,6 +3051,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
 
         if (!DEBUG_BOSS_PIN && bossHealth.current <= 0 && !finished.current) {
           finished.current = true;
+          const routeSummary = getGateRouteSummary(gateStates.current);
           recordBalanceEvent("won", state.clock.elapsedTime, {
             bossDuration:
               bossStartedAt.current == null
@@ -3016,6 +3061,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
                   ),
             bossStartTroops: bossStartTroops.current,
             finalTroops: troops.current,
+            routeSummary,
           });
           onEvent({
             type: "won",
@@ -3107,6 +3153,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
         bossStartedAt.current == null
           ? 0
           : state.clock.elapsedTime - bossStartedAt.current;
+      const routeSummary = getGateRouteSummary(gateStates.current);
       const debugData = import.meta.env.DEV
         ? {
             status,
@@ -3128,6 +3175,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
             bossActive: bossActive.current,
             lastHit: lastHit.current,
             lastEnemyHit: lastEnemyHit.current,
+            gateRoute: routeSummary,
           }
         : null;
       onFrameData({
@@ -3183,6 +3231,7 @@ function World({ status, runSeed, onFrameData, onEvent, onReady }) {
           activeBossProjectiles: bossProjectiles.current.filter(
             (projectile) => projectile.active,
           ).length,
+          gateRoute: routeSummary,
           bossShockwave: { ...bossShockwave.current },
           lastHit: lastHit.current,
           lastEnemyHit: lastEnemyHit.current,
@@ -3377,6 +3426,11 @@ function DevPanel({ data }) {
       <div className="dev-panel-wide">门 {gates}</div>
       <div className="dev-panel-wide">
         敌 {debug.aliveByWave.join(" / ")}
+      </div>
+      <div className="dev-panel-wide">
+        Route {debug.gateRoute?.quality || "-"} good{" "}
+        {debug.gateRoute?.betterChoices ?? 0} bad{" "}
+        {debug.gateRoute?.worseChoices ?? 0}
       </div>
       <div>
         <span>Boss {debug.bossActive ? "ON" : "OFF"}</span>
